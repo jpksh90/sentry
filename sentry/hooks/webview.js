@@ -94,7 +94,6 @@ Java.perform(() => {
   const WebViewClient = Java.use("android.webkit.WebViewClient");
   const ValueCallback = Java.use("android.webkit.ValueCallback");
   const StringClass = Java.use("java.lang.String");
-  const ActivityCompat = Java.use("androidx.core.app.ActivityCompat");
 
   const ProbeCallback = Java.registerClass({
     name: "com.frida.instrumentation.ProbeCallback",
@@ -206,22 +205,6 @@ Java.perform(() => {
     return retval;
   };
 
-  ActivityCompat.requestPermissions.overload(
-    "android.app.Activity",
-    "java.lang.String[]",
-    "int",
-  ).implementation = function (activity, permissions, requestCode) {
-    const retval = this.requestPermissions(activity, permissions, requestCode);
-
-    log(EVENT_TYPE.PERMISSION_REQUESTED, {
-      activity: activity,
-      permissions: permissions,
-      requestCode: requestCode,
-      retval: retval,
-    });
-
-    return retval;
-  };
 
   WebView.addJavascriptInterface.overload(
     "java.lang.Object",
