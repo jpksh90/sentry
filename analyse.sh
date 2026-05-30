@@ -66,4 +66,4 @@ docker compose down
 docker compose up -d emulator run-frida-server sentry
 
 # docker compose logs -f sentry
-docker compose logs sentry > ./target/output.log
+docker logs sentry | tee ./target/output.log
