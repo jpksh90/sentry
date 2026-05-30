@@ -140,7 +140,7 @@ Java.perform(() => {
 
   WebView.loadUrl.overload("java.lang.String").implementation = function (url) {
     const retval = this.loadUrl(url);
-    log(EVENT_TYPE.URL_LOAD, { url: url, retval: retval });
+    log(EVENT_TYPE.URL_LOADED, { url: url, retval: retval });
     return retval;
   };
 
