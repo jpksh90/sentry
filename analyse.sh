@@ -3,7 +3,7 @@
 echo "Sentry - version alpha"
 echo ""
 
-function check_missing_commands() {
+check_missing_commands() {
   missing=0
 
   for cmd in "$@"; do
@@ -65,5 +65,4 @@ echo "APP_PACKAGE=$APP_PACKAGE" > ./target/.env
 docker compose down
 docker compose up -d emulator run-frida-server sentry
 
-# docker compose logs -f sentry
-docker logs sentry | tee ./target/output.log
+docker logs -f sentry | tee ./target/output.log ./logs/output.log
