@@ -12,7 +12,11 @@ chmod +x ./analyse.sh
 ./analyse.sh <APK-FILE> [<APK-PACKAGE>]
 ```
 
-This outputs a log file in the `/logs` directory which can be used to produce a human-readable report.
+This outputs a log file and WebView security report:
+
+- `logs/output.log`: raw JSON event stream from the Frida hooks
+- `logs/report.md`: human-readable WebView security findings
+- `target/report.json`: machine-readable report with risk score, findings, evidence, and WebView inventory
 
 # WebView Demonstration
 
@@ -127,3 +131,20 @@ frida -U -f com.example.bachelorproject -l sentry/hooks/webview.js -l sentry/hoo
 ```
 
 You should see output from the FRIDA hooks about WebView activity.
+
+## Generate a WebView Security Report
+
+Reports are generated automatically by `analyse.sh`. You can also regenerate them from an existing log file:
+
+```bash
+python3 sentry/report.py target/output.log --json target/report.json --markdown logs/report.md
+```
+
+If you know which origins are trusted for the target app, pass them explicitly so bridge exposure and remote-content findings can be scored more accurately:
+
+```bash
+python3 sentry/report.py target/output.log \
+  --trusted-origin https://app.example.com \
+  --json target/report.json \
+  --markdown logs/report.md
+```

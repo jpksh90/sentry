@@ -18,7 +18,7 @@ check_missing_commands() {
   fi
 }
 
-check_missing_commands aapt docker
+check_missing_commands aapt docker python3
 
 # make sure the apk is provided
 APK_INPUT="$1"
@@ -60,6 +60,25 @@ mkdir -p ./logs
 cp "$APK_INPUT" ./target/app.apk
 touch ./target/output.log
 echo "APP_PACKAGE=$APP_PACKAGE" > ./target/.env
+
+REPORT_GENERATED=0
+
+generate_report() {
+  if [ "$REPORT_GENERATED" -eq 1 ]; then
+    return
+  fi
+  REPORT_GENERATED=1
+
+  if [ -f ./target/output.log ]; then
+    python3 ./sentry/report.py ./target/output.log \
+      --json ./target/report.json \
+      --markdown ./logs/report.md || true
+  fi
+}
+
+trap generate_report EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # docker compose up -d emulator
 docker compose down
