@@ -16,7 +16,7 @@ This outputs a log file and WebView security report:
 
 - `logs/output.log`: raw JSON event stream from the Frida hooks
 - `logs/report.md`: human-readable WebView security findings
-- `target/report.json`: machine-readable report with risk score, findings, evidence, WebView inventory, and an origin-to-bridge map
+- `target/report.json`: machine-readable report with risk score, findings, evidence, WebView inventory, sensitive data flows, and an origin-to-bridge map
 
 # WebView Demonstration
 
@@ -150,3 +150,4 @@ python3 sentry/report.py target/output.log \
 ```
 
 The report includes an **Origin To Bridge Map** section that groups each observed JavaScript bridge by WebView origin, exposed methods, and bridge calls.
+It also includes a **Sensitive Data Flows** section when values returned by sensitive-looking bridge methods reach JavaScript sinks such as `fetch`, XHR, `sendBeacon`, navigation APIs, `postMessage`, `eval`, or storage.

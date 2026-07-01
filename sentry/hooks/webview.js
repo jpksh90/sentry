@@ -21,6 +21,9 @@ const EVENT_TYPE = Object.freeze({
   PERMISSION_DENY_CALLED: "permission.deny.called",
 });
 
+const SENSITIVE_BRIDGE_METHOD_RE =
+  /(camera|photo|image|location|gps|contact|sms|phone|call|record|audio|microphone|mic|token|secret|password|cookie|session|credential|permission|file|read|write|delete|download|upload|device|imei|androidid|id)/i;
+
 function buildInjectionScript() {
   const namespace = JSON.stringify(SENTRY_NAMESPACE);
 
@@ -31,6 +34,10 @@ function buildInjectionScript() {
     const state = {
       version: 1,
       events: [],
+      taints: [],
+      taintByValue: {},
+      taintedStorage: {},
+      bridgeWrappers: {},
     };
 
     Object.defineProperty(window, namespace, {
@@ -81,6 +88,103 @@ function buildInjectionScript() {
       }
     }
 
+    function fingerprint(value) {
+      if (value === null || value === undefined) { return null; }
+
+      try {
+        if (typeof value === "string") {
+          return value.length ? value.slice(0, 512) : null;
+        }
+        if (typeof value === "number" || typeof value === "boolean") {
+          return String(value);
+        }
+        const json = JSON.stringify(copyArg(value, 0));
+        return json && json !== "null" ? json.slice(0, 512) : null;
+      } catch (e) {
+        return String(value).slice(0, 512);
+      }
+    }
+
+    function rememberTaint(value, source) {
+      const fp = fingerprint(value);
+      if (!fp) { return null; }
+
+      const taint = {
+        id: "taint-" + Date.now() + "-" + state.taints.length,
+        source: source,
+        valuePreview: fp.slice(0, 120),
+      };
+
+      state.taints.push(taint);
+      state.taintByValue[fp] = taint;
+
+      if (state.taints.length > 200) {
+        const removed = state.taints.splice(0, state.taints.length - 200);
+        removed.forEach(function (item) {
+          Object.keys(state.taintByValue).forEach(function (key) {
+            if (state.taintByValue[key] === item) {
+              delete state.taintByValue[key];
+            }
+          });
+        });
+      }
+
+      return taint;
+    }
+
+    function findTaint(value) {
+      const fp = fingerprint(value);
+      if (fp && state.taintByValue[fp]) {
+        return state.taintByValue[fp];
+      }
+
+      if (typeof value === "string") {
+        for (const key in state.taintByValue) {
+          if (key.length >= 8 && value.indexOf(key) !== -1) {
+            return state.taintByValue[key];
+          }
+        }
+      }
+
+      if (Array.isArray(value)) {
+        for (let i = 0; i < value.length; i++) {
+          const taint = findTaint(value[i]);
+          if (taint) { return taint; }
+        }
+      }
+
+      if (value && typeof value === "object") {
+        const keys = Object.keys(value).slice(0, 20);
+        for (let i = 0; i < keys.length; i++) {
+          let taint = null;
+          try {
+            taint = findTaint(value[keys[i]]);
+          } catch (e) {
+            taint = null;
+          }
+          if (taint) { return taint; }
+        }
+      }
+
+      return null;
+    }
+
+    function taintsForArgs(args) {
+      const taints = [];
+      Array.prototype.slice.call(args).forEach(function (arg, index) {
+        const taint = findTaint(arg);
+        if (taint) {
+          taints.push({
+            argumentIndex: index,
+            taintId: taint.id,
+            source: taint.source,
+            valuePreview: taint.valuePreview,
+          });
+        }
+      });
+      return taints;
+    }
+
     function intercept(owner, property, name) {
       try {
         const original = owner && owner[property];
@@ -89,10 +193,12 @@ function buildInjectionScript() {
         }
 
         const wrapped = function() {
-          const args = Array.prototype.slice.call(arguments).map(function (arg) {
+          const rawArgs = Array.prototype.slice.call(arguments);
+          const args = rawArgs.map(function (arg) {
             return copyArg(arg, 0);
           });
-          report({ name: name, arguments: args });
+          const taints = taintsForArgs(rawArgs);
+          report({ name: name, arguments: args, taints: taints });
           return original.apply(this, arguments);
         };
 
@@ -111,6 +217,17 @@ function buildInjectionScript() {
 
     intercept(window, "fetch", "fetch");
     intercept(window, "eval", "eval");
+    intercept(window, "open", "window.open");
+    intercept(window, "postMessage", "window.postMessage");
+
+    if (window.navigator) {
+      intercept(window.navigator, "sendBeacon", "navigator.sendBeacon");
+    }
+
+    if (window.Location && Location.prototype) {
+      intercept(Location.prototype, "assign", "location.assign");
+      intercept(Location.prototype, "replace", "location.replace");
+    }
 
     if (window.XMLHttpRequest && XMLHttpRequest.prototype) {
       intercept(XMLHttpRequest.prototype, "send", "XMLHttpRequest.send");
@@ -118,11 +235,121 @@ function buildInjectionScript() {
     }
 
     if (window.Storage && Storage.prototype) {
-      intercept(Storage.prototype, "setItem", "localStorage.setItem");
-      intercept(Storage.prototype, "getItem", "localStorage.getItem");
+      const originalSetItem = Storage.prototype.setItem;
+      const originalGetItem = Storage.prototype.getItem;
+
+      if (typeof originalSetItem === "function" && !originalSetItem.__sentryWrapped) {
+        Storage.prototype.setItem = function(key, value) {
+          const taints = taintsForArgs(arguments);
+          if (taints.length > 0) {
+            state.taintedStorage[String(key)] = taints[0];
+          }
+          report({
+            name: "localStorage.setItem",
+            arguments: [copyArg(key, 0), copyArg(value, 0)],
+            taints: taints,
+          });
+          return originalSetItem.apply(this, arguments);
+        };
+        Object.defineProperty(Storage.prototype.setItem, "__sentryWrapped", {
+          value: true,
+          configurable: false,
+          enumerable: false,
+          writable: false,
+        });
+      }
+
+      if (typeof originalGetItem === "function" && !originalGetItem.__sentryWrapped) {
+        Storage.prototype.getItem = function(key) {
+          const result = originalGetItem.apply(this, arguments);
+          const storedTaint = state.taintedStorage[String(key)];
+          if (storedTaint && result !== null && result !== undefined) {
+            rememberTaint(result, storedTaint.source);
+          }
+          report({
+            name: "localStorage.getItem",
+            arguments: [copyArg(key, 0)],
+            taints: storedTaint ? [storedTaint] : [],
+          });
+          return result;
+        };
+        Object.defineProperty(Storage.prototype.getItem, "__sentryWrapped", {
+          value: true,
+          configurable: false,
+          enumerable: false,
+          writable: false,
+        });
+      }
     }
 
+    state.wrapBridgeMethod = function(interfaceName, methodName, source) {
+      const key = interfaceName + "." + methodName;
+      if (state.bridgeWrappers[key]) { return true; }
+
+      const bridge = window[interfaceName];
+      if (!bridge || typeof bridge[methodName] !== "function") {
+        return false;
+      }
+
+      const original = bridge[methodName];
+      const wrapped = function() {
+        const args = Array.prototype.slice.call(arguments).map(function (arg) {
+          return copyArg(arg, 0);
+        });
+        const result = original.apply(this, arguments);
+        const taint = rememberTaint(result, source);
+        report({
+          name: "bridge.method.return.tainted",
+          arguments: args,
+          taints: taint ? [{
+            argumentIndex: -1,
+            taintId: taint.id,
+            source: taint.source,
+            valuePreview: taint.valuePreview,
+          }] : [],
+          bridge: {
+            interfaceName: interfaceName,
+            methodName: methodName,
+          },
+        });
+        return result;
+      };
+
+      Object.defineProperty(wrapped, "__sentryWrapped", {
+        value: true,
+        configurable: false,
+        enumerable: false,
+        writable: false,
+      });
+
+      try {
+        bridge[methodName] = wrapped;
+        state.bridgeWrappers[key] = true;
+        return true;
+      } catch (e) {
+        report({
+          name: "bridge.method.wrap.failed",
+          arguments: [interfaceName, methodName, String(e)],
+        });
+        return false;
+      }
+    };
+
     return true;
+  })();`;
+}
+
+function buildBridgeTaintScript(interfaceName, methodName, source) {
+  return `(function() {
+    const state = window[${JSON.stringify(SENTRY_NAMESPACE)}];
+    if (!state || typeof state.wrapBridgeMethod !== "function") {
+      return false;
+    }
+    return state.wrapBridgeMethod(
+      ${JSON.stringify(interfaceName)},
+      ${JSON.stringify(methodName)},
+      ${JSON.stringify(source)}
+    );
   })();`;
 }
 
@@ -238,6 +465,7 @@ Java.perform(() => {
   const settingsToWebView = {};
   const bridgeObjects = {};
   const webViewsById = {};
+  const bridgeTaintWrappersByWebView = {};
   const hookedBridgeMethods = {};
   const hookedWebViewClientClasses = {};
   const hookedWebChromeClientClasses = {};
@@ -348,6 +576,24 @@ Java.perform(() => {
     evaluateOnWebView(view, INJECTION, null, "inject");
   };
 
+  const injectBridgeTaintWrappers = (view) => {
+    const state = getWebViewState(view);
+    const wrappers = bridgeTaintWrappersByWebView[state.id] || [];
+
+    wrappers.forEach((wrapper) => {
+      evaluateOnWebView(
+        view,
+        buildBridgeTaintScript(
+          wrapper.interfaceName,
+          wrapper.methodName,
+          wrapper.source,
+        ),
+        null,
+        "bridge-taint",
+      );
+    });
+  };
+
   const ProbeCallback = Java.registerClass({
     name: "com.frida.instrumentation.ProbeCallback",
     implements: [ValueCallback],
@@ -375,6 +621,8 @@ Java.perform(() => {
               href: data.href || null,
               name: event.name,
               arguments: event.arguments,
+              taints: event.taints || [],
+              bridge: event.bridge || null,
             },
             event.timestamp,
           );
@@ -426,6 +674,7 @@ Java.perform(() => {
           });
 
           inject(view);
+          injectBridgeTaintWrappers(view);
           return retval;
         },
     );
@@ -439,6 +688,7 @@ Java.perform(() => {
           const retval = overload.apply(this, arguments);
           updateWebViewUrl(view, url);
           inject(view);
+          injectBridgeTaintWrappers(view);
           return retval;
         },
     );
@@ -585,6 +835,7 @@ Java.perform(() => {
     }
 
     const signature = `${className}.${methodName}(${methodArgs.join(",")})`;
+    const sensitive = SENSITIVE_BRIDGE_METHOD_RE.test(methodName);
 
     log(EVENT_TYPE.BRIDGE_METHOD_ADDED, {
       webViewId: webViewId,
@@ -592,11 +843,38 @@ Java.perform(() => {
       className: className,
       method: methodName,
       args: methodArgs,
+      sensitive: sensitive,
       pageUrl: webViewsById[webViewId] ? webViewsById[webViewId].lastUrl : null,
       origin: webViewsById[webViewId]
         ? webViewsById[webViewId].lastOrigin
         : null,
     });
+
+    if (sensitive) {
+      if (!bridgeTaintWrappersByWebView[webViewId]) {
+        bridgeTaintWrappersByWebView[webViewId] = [];
+      }
+
+      const wrapperKey = `${interfaceName}.${methodName}`;
+      const exists = bridgeTaintWrappersByWebView[webViewId].some(
+        (wrapper) => wrapper.key === wrapperKey,
+      );
+
+      if (!exists) {
+        bridgeTaintWrappersByWebView[webViewId].push({
+          key: wrapperKey,
+          interfaceName: interfaceName,
+          methodName: methodName,
+          source: {
+            kind: "javascript-bridge-return",
+            interfaceName: interfaceName,
+            methodName: methodName,
+            className: className,
+            sensitive: true,
+          },
+        });
+      }
+    }
 
     if (hookedBridgeMethods[signature]) return;
     hookedBridgeMethods[signature] = true;
@@ -775,6 +1053,7 @@ Java.perform(() => {
     const retval = this.loadUrl(url);
     const state = updateWebViewUrl(this, url);
     inject(this);
+    injectBridgeTaintWrappers(this);
 
     log(EVENT_TYPE.URL_LOADED, {
       webViewId: state.id,
@@ -793,6 +1072,7 @@ Java.perform(() => {
     const retval = this.loadUrl(url, additionalHttpHeaders);
     const state = updateWebViewUrl(this, url);
     inject(this);
+    injectBridgeTaintWrappers(this);
 
     log(EVENT_TYPE.URL_LOADED, {
       webViewId: state.id,
@@ -812,6 +1092,7 @@ Java.perform(() => {
     const retval = this.postUrl(url, postData);
     const state = updateWebViewUrl(this, url);
     inject(this);
+    injectBridgeTaintWrappers(this);
 
     log(EVENT_TYPE.URL_LOADED, {
       webViewId: state.id,
@@ -832,6 +1113,7 @@ Java.perform(() => {
     const retval = this.loadData(data, mimeType, encoding);
     const state = getWebViewState(this);
     inject(this);
+    injectBridgeTaintWrappers(this);
 
     log(EVENT_TYPE.URL_LOADED, {
       webViewId: state.id,
@@ -861,6 +1143,7 @@ Java.perform(() => {
     );
     const state = updateWebViewUrl(this, baseUrl || historyUrl);
     inject(this);
+    injectBridgeTaintWrappers(this);
 
     log(EVENT_TYPE.URL_LOADED, {
       webViewId: state.id,
@@ -991,6 +1274,7 @@ Java.perform(() => {
         const view = state.view;
 
         inject(view);
+        injectBridgeTaintWrappers(view);
         evaluateOnWebView(
           view,
           buildProbeScript(state.id),
