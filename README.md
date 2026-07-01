@@ -5,7 +5,7 @@ This project aims to evaluate the security implications of hybrid Android apps u
 
 # Quick Start
 
-This project is only supported on Linux distributions, and so far only tested on Fedora 43. You need to have Docker and Docker Compose installed on your system, along with `aapt` from the Android SDK if you don't provide the APK package name.
+This project is only supported on Linux distributions, and so far only tested on Fedora 43. You need to have Docker and Docker Compose installed on your system, along with `aapt` installed with Homebrew if you don't provide the APK package name.
 
 ```bash
 chmod +x ./analyse.sh
@@ -16,7 +16,7 @@ This outputs a log file and WebView security report:
 
 - `logs/output.log`: raw JSON event stream from the Frida hooks
 - `logs/report.md`: human-readable WebView security findings
-- `target/report.json`: machine-readable report with risk score, findings, evidence, and WebView inventory
+- `target/report.json`: machine-readable report with risk score, findings, evidence, WebView inventory, and an origin-to-bridge map
 
 # WebView Demonstration
 
@@ -148,3 +148,5 @@ python3 sentry/report.py target/output.log \
   --json target/report.json \
   --markdown logs/report.md
 ```
+
+The report includes an **Origin To Bridge Map** section that groups each observed JavaScript bridge by WebView origin, exposed methods, and bridge calls.

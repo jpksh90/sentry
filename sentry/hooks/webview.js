@@ -237,6 +237,7 @@ Java.perform(() => {
   const webViews = {};
   const settingsToWebView = {};
   const bridgeObjects = {};
+  const webViewsById = {};
   const hookedBridgeMethods = {};
   const hookedWebViewClientClasses = {};
   const hookedWebChromeClientClasses = {};
@@ -271,6 +272,23 @@ Java.perform(() => {
     }
   };
 
+  const originForUrl = (url) => {
+    if (!url) return null;
+
+    const text = stringValue(url);
+    const match = /^([a-zA-Z][a-zA-Z0-9+.-]*):(?:\/\/([^/?#]*))?/.exec(text);
+    if (!match) return null;
+
+    const scheme = match[1].toLowerCase();
+    const authority = match[2];
+
+    if (scheme === "http" || scheme === "https") {
+      return authority ? `${scheme}://${authority}` : `${scheme}:`;
+    }
+
+    return `${scheme}:`;
+  };
+
   const getWebViewState = (view) => {
     const key = keyFor(view);
     if (!webViews[key]) {
@@ -279,7 +297,9 @@ Java.perform(() => {
         key: key,
         view: Java.retain(view),
         lastUrl: null,
+        lastOrigin: null,
       };
+      webViewsById[webViews[key].id] = webViews[key];
     }
     return webViews[key];
   };
@@ -288,6 +308,7 @@ Java.perform(() => {
     const state = getWebViewState(view);
     if (url !== null && url !== undefined) {
       state.lastUrl = stringValue(url);
+      state.lastOrigin = originForUrl(state.lastUrl);
     }
     return state;
   };
@@ -571,6 +592,10 @@ Java.perform(() => {
       className: className,
       method: methodName,
       args: methodArgs,
+      pageUrl: webViewsById[webViewId] ? webViewsById[webViewId].lastUrl : null,
+      origin: webViewsById[webViewId]
+        ? webViewsById[webViewId].lastOrigin
+        : null,
     });
 
     if (hookedBridgeMethods[signature]) return;
@@ -606,9 +631,23 @@ Java.perform(() => {
         }
 
         const bridge = bridgeObjects[keyFor(this)] || {};
+        const webViewState = bridge.webViewId
+          ? webViewsById[bridge.webViewId]
+          : null;
+        const currentPageUrl = webViewState
+          ? webViewState.lastUrl
+          : bridge.attachedPageUrl || null;
+        const currentOrigin = webViewState
+          ? webViewState.lastOrigin
+          : bridge.attachedOrigin || null;
+
         log(EVENT_TYPE.BRIDGE_METHOD_CALLED, {
           webViewId: bridge.webViewId || null,
-          pageUrl: bridge.pageUrl || null,
+          attachedPageUrl: bridge.attachedPageUrl || null,
+          attachedOrigin: bridge.attachedOrigin || null,
+          currentPageUrl: currentPageUrl,
+          currentOrigin: currentOrigin,
+          pageUrl: currentPageUrl,
           interfaceName: bridge.interfaceName || interfaceName,
           className: className,
           methodName: methodName,
@@ -868,7 +907,8 @@ Java.perform(() => {
 
     bridgeObjects[objectKey] = {
       webViewId: state.id,
-      pageUrl: state.lastUrl,
+      attachedPageUrl: state.lastUrl,
+      attachedOrigin: state.lastOrigin,
       interfaceName: stringValue(interfaceName),
       className: classNameOf(object),
     };
@@ -876,6 +916,9 @@ Java.perform(() => {
     log(EVENT_TYPE.BRIDGE_ADDED, {
       webViewId: state.id,
       pageUrl: state.lastUrl,
+      origin: state.lastOrigin,
+      attachedPageUrl: state.lastUrl,
+      attachedOrigin: state.lastOrigin,
       object: object,
       interfaceName: stringValue(interfaceName),
       className: classNameOf(object),
