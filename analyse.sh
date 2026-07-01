@@ -18,7 +18,23 @@ check_missing_commands() {
   fi
 }
 
-check_missing_commands aapt docker python3
+find_aapt() {
+  if command -v aapt >/dev/null 2>&1; then
+    command -v aapt
+    return 0
+  fi
+
+  for candidate in /opt/homebrew/bin/aapt /usr/local/bin/aapt; do
+    if [ -x "$candidate" ]; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+check_missing_commands docker python3
 
 # make sure the apk is provided
 APK_INPUT="$1"
@@ -36,7 +52,14 @@ APP_PACKAGE="$2"
 
 # extract package name from apk if not provided
 if [ "$APP_PACKAGE" = "" ]; then
-  APP_PACKAGE=$(aapt dump badging "$APK_INPUT" | grep package | cut -d' ' -f2 | cut -d"'" -f2)
+  AAPT_BIN=$(find_aapt)
+
+  if [ "$AAPT_BIN" = "" ]; then
+    echo "Failed to find aapt. Install it with Homebrew or provide the APK package name."
+    exit 1
+  fi
+
+  APP_PACKAGE=$("$AAPT_BIN" dump badging "$APK_INPUT" | grep package | cut -d' ' -f2 | cut -d"'" -f2)
 fi
 
 if [ "$APP_PACKAGE" = "" ]; then
