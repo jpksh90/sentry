@@ -123,7 +123,7 @@ adb install -r android/target/app.apk
 ## Start app on emulator with FRIDA
 
 ```bash
-frida -U -f com.example.bachelorproject -l sentry/hooks.js
+frida -U -f com.example.bachelorproject -l sentry/hooks/webview.js -l sentry/hooks/getenv.js
 ```
 
 You should see output from the FRIDA hooks about WebView activity.
