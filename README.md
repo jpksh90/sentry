@@ -151,3 +151,15 @@ python3 sentry/report.py target/output.log \
 
 The report includes an **Origin To Bridge Map** section that groups each observed JavaScript bridge by WebView origin, exposed methods, and bridge calls.
 It also includes a **Sensitive Data Flows** section when values returned by sensitive-looking bridge methods reach JavaScript sinks such as `fetch`, XHR, `sendBeacon`, navigation APIs, `postMessage`, `eval`, or storage.
+
+## WebTUI Report Interface
+
+The `/tui` folder contains a standalone WebTUI-based report viewer for Sentry output. It is separate from the `/web` demo app, so the demo remains a target for WebView analysis.
+
+```bash
+cd tui
+npm install
+npm run dev
+```
+
+To view a real report, copy or serve `target/report.json` as `tui/public/report.json`; otherwise the interface starts with sample data.
