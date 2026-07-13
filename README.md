@@ -5,12 +5,27 @@ This project aims to evaluate the security implications of hybrid Android apps u
 
 # Quick Start
 
-This project is only supported on Linux distributions, and so far only tested on Fedora 43. You need to have Docker and Docker Compose installed on your system, along with `aapt` installed with Homebrew if you don't provide the APK package name.
+Docker emulator mode is supported on Linux distributions with `/dev/kvm`, and so far only tested on Fedora 43. On macOS or hosts without KVM, run a local Android emulator and use local mode instead. You need `aapt` installed with Homebrew if you don't provide the APK package name.
 
 ```bash
 chmod +x ./analyse.sh
 ./analyse.sh <APK-FILE> [<APK-PACKAGE>]
 ```
+
+`analyse.sh` chooses a runner automatically:
+
+- `SENTRY_RUNNER=docker` uses Docker Compose and requires Linux/KVM.
+- `SENTRY_RUNNER=local` uses the host `adb` and `frida` commands with an already-running emulator.
+
+## Run Benchmarks On Linux
+
+The `Benchmark/` folder contains APKs for validating Sentry against known WebView update cases. On a Linux host with Docker Compose, `/dev/kvm`, Python 3, and `aapt` available, run:
+
+```bash
+scripts/run-benchmarks-linux.sh
+```
+
+Results are written to `benchmark-results/<apk-name>/`. The per-APK timeout defaults to 600 seconds and can be changed with `SENTRY_BENCHMARK_SECONDS`.
 
 This outputs a log file and WebView security report:
 
