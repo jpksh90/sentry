@@ -35,9 +35,7 @@ This outputs a log file and WebView security report:
 
 # WebView Demonstration
 
-This project contains a demonstration web-application in the `/web` folder and an Android app in the `/android` folder. A Docker Compose configuration is provided to run the neccessary components locally, this will build the Android app into an APK, run the web server, start the emulator, push the APK to the emulator, push `frida-server` to the emulator and run it.
-
-Enjoy a cup of nice tea or coffee on initial launch.
+We will open source the tool after acceptance of the paper.
 
 ```bash
 docker compose up
