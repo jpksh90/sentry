@@ -1,64 +1,185 @@
 # Sentry
-> Security Analysis of Hybrid Android apps
 
-This project aims to evaluate the security implications of hybrid Android apps using dynamic analysis with [Frida](https://frida.re/). The Sentry defines FRIDA hooks that intercept into the app's WebView-related components, also intercepting into JavaScript of the WebView contents.
+Sentry is a dynamic analysis tool for hybrid Android apps. It runs an Android app under Frida, hooks WebView-related APIs, observes JavaScript bridge behavior, and turns the captured event stream into a WebView security report.
 
-# Quick Start
+The current analysis focuses on:
 
-Docker emulator mode is supported on Linux distributions with `/dev/kvm`, and so far only tested on Fedora 43. On macOS or hosts without KVM, run a local Android emulator and use local mode instead. You need `aapt` installed with Homebrew if you don't provide the APK package name.
+- WebView settings that increase attack surface
+- URL loads, inline content, file URLs, and cleartext traffic
+- `addJavascriptInterface` bridge exposure
+- JavaScript bridge methods and bridge calls
+- WebView permission requests and grants
+- Sensitive bridge return values flowing into JavaScript sinks
+- Origin-to-bridge mapping for exposed native interfaces
+
+## Repository Layout
+
+- `analyse.sh`: main entry point for running analysis on an APK
+- `sentry/hooks/`: Frida hooks injected into the target app
+- `sentry/report.py`: report generator for captured Sentry event logs
+- `docker-compose.yml`: Linux/KVM Docker analysis environment
+- `Benchmark/`: benchmark APKs and source archives
+- `scripts/run-benchmarks-linux.sh`: batch runner for benchmark APKs on Linux
+- `android/` and `web/`: demonstration Android/WebView target app and web content
+
+## Quick Start
+
+Run Sentry against an APK:
 
 ```bash
 chmod +x ./analyse.sh
 ./analyse.sh <APK-FILE> [<APK-PACKAGE>]
 ```
 
+If the package name is omitted, `analyse.sh` uses `aapt` to extract it from the APK.
+
+Generated outputs:
+
+- `logs/output.log`: raw Frida/Sentry event stream
+- `logs/report.md`: human-readable WebView security report
+- `target/report.json`: machine-readable report with findings, risk score, evidence, WebView inventory, sensitive data flows, and origin-to-bridge map
+
+## Runner Modes
+
 `analyse.sh` chooses a runner automatically:
 
-- `SENTRY_RUNNER=docker` uses Docker Compose and requires Linux/KVM.
-- `SENTRY_RUNNER=local` uses the host `adb` and `frida` commands with an already-running emulator.
+- `SENTRY_RUNNER=docker`: uses Docker Compose and the Docker Android emulator. This requires Linux with `/dev/kvm`.
+- `SENTRY_RUNNER=local`: uses the host `adb` and `frida` commands with an already-running Android emulator or device.
+- `SENTRY_RUNNER=auto`: default. Uses Docker mode on Linux/KVM and local mode elsewhere.
+
+Examples:
+
+```bash
+SENTRY_RUNNER=docker ./analyse.sh Benchmark/JsUpdateCaseF.apk com.example.jsUpdatecaseF
+SENTRY_RUNNER=local ./analyse.sh Benchmark/JsUpdateCaseF.apk com.example.jsUpdatecaseF
+```
+
+Local mode expects:
+
+- `adb` on `PATH`
+- `frida` on `PATH`
+- a booted Android emulator/device visible to `adb`
+- `frida-server` installed on the device, executable, and available at `/data/local/tmp/frida-server` unless `SENTRY_FRIDA_SERVER` is set
+
+Useful local-mode environment variables:
+
+- `SENTRY_ADB_SERIAL`: pass a specific adb device serial
+- `SENTRY_FRIDA_DEVICE`: pass a specific Frida device id
+- `SENTRY_FRIDA_SERVER`: path to `frida-server` on the Android device
+- `SENTRY_BOOT_TIMEOUT`: boot wait timeout in seconds, default `120`
 
 ## Run Benchmarks On Linux
 
-The `Benchmark/` folder contains APKs for validating Sentry against known WebView update cases. On a Linux host with Docker Compose, `/dev/kvm`, Python 3, and `aapt` available, run:
+The `Benchmark/` folder contains APKs for validating Sentry against known WebView update cases. On a Linux host with Docker Compose, `/dev/kvm`, Python 3, and `aapt`, run:
 
 ```bash
 scripts/run-benchmarks-linux.sh
 ```
 
-Results are written to `benchmark-results/<apk-name>/`. The per-APK timeout defaults to 600 seconds and can be changed with `SENTRY_BENCHMARK_SECONDS`.
+The script runs every `*.apk` in `Benchmark/`, archives each run, and writes outputs to:
 
-This outputs a log file and WebView security report:
+```text
+benchmark-results/<apk-name>/
+```
 
-- `logs/output.log`: raw JSON event stream from the Frida hooks
-- `logs/report.md`: human-readable WebView security findings
-- `target/report.json`: machine-readable report with risk score, findings, evidence, WebView inventory, sensitive data flows, and an origin-to-bridge map
+Each benchmark result directory may contain:
 
-# WebView Demonstration
+- `status.txt`: APK path, package name, status, and timeout
+- `runner.log`: full stdout/stderr from `analyse.sh`
+- `output.log`: captured Sentry event stream
+- `logs-output.log`: copy of `logs/output.log`
+- `report.json`: machine-readable report, when events were captured
+- `report.md`: Markdown report, when events were captured
 
-We will open source the tool after acceptance of the paper.
+Benchmark runner options:
+
+```bash
+SENTRY_BENCHMARK_SECONDS=900 scripts/run-benchmarks-linux.sh
+SENTRY_BENCHMARK_RESULTS=/tmp/sentry-results scripts/run-benchmarks-linux.sh
+scripts/run-benchmarks-linux.sh /path/to/benchmark-apks
+```
+
+The script intentionally fails early when `/dev/kvm` is unavailable, because Docker emulator mode cannot run correctly without KVM.
+
+## Regenerate Reports
+
+Reports are generated automatically by `analyse.sh`. To regenerate reports from an existing event log:
+
+```bash
+python3 sentry/report.py target/output.log \
+  --json target/report.json \
+  --markdown logs/report.md
+```
+
+If you know which WebView origins should be trusted for the target app, pass them explicitly:
+
+```bash
+python3 sentry/report.py target/output.log \
+  --trusted-origin https://app.example.com \
+  --json target/report.json \
+  --markdown logs/report.md
+```
+
+Trusted origins make bridge exposure and remote-content findings more precise.
+
+## WebTUI Report UI
+
+The `ui/` folder contains a WebTUI-based report viewer for Sentry output. It is a Vite/Vue app that shows report overview metrics, findings, sensitive data flows, the origin-to-bridge map, and the raw JSON report.
+
+Start it locally:
+
+```bash
+cd ui
+npm install
+npm run dev
+```
+
+To view a real Sentry report, copy `target/report.json` into `ui/public/report.json` before starting or refreshing the UI:
+
+```bash
+cp target/report.json ui/public/report.json
+```
+
+If `ui/public/report.json` is missing, the UI starts in sample mode.
+
+## Demonstration App
+
+The repository includes a demonstration WebView app in `android/` and a web target in `web/`. Docker Compose can build the demo APK, start web content, start the Android emulator, install the APK, push `frida-server`, and run Sentry.
 
 ```bash
 docker compose up
 ```
 
-The default port for the emulator VNC is `6080`. Visit `localhost:6080` in your browser to view the emulator.
+The emulator VNC interface is exposed on:
 
-# Setup for Local Development
-
-This project is developed on **Fedora 43** with **x86_64** architecture, so any other configuration is not guaranteed to work.
-
-You'll need the following dependencies installed on your system and be available on your PATH: `git`, `curl`, `unxz`, `python`, `pip`, `adb`, `sdkmanager`, `avdmanager`, `emulator`, `java` (JDK) and `npm`.
-
-## Clone repository
-
-```bash
-git clone https://github.com/mathiasyde/bachelorproject
-cd bachelorproject
+```text
+http://localhost:6080
 ```
 
-Each step from now on assumes your current working directory is in the repository root.
+## Local Development Setup
 
-## Build Android APK
+This project is developed primarily on Fedora x86_64. Docker mode is intended for Linux hosts with KVM. macOS can use local mode with Android Studio's emulator, `adb`, and `frida-tools`.
+
+Common dependencies:
+
+- `git`
+- `docker` and Docker Compose for Docker mode
+- `python3`
+- `aapt`
+- `adb`
+- `frida-tools`
+- Android SDK tools: `sdkmanager`, `avdmanager`, `emulator`
+- Java JDK
+- `npm` for the demo web app
+
+Clone the repository:
+
+```bash
+git clone git@github.com:jpksh90/sentry.git
+cd sentry
+```
+
+Build the demo Android APK:
 
 ```bash
 cd android
@@ -66,11 +187,7 @@ cd android
 ./gradlew copyApkToTarget
 ```
 
-This produces an APK file located at `android/target/app.apk`.
-
-## Install Android emulator
-
-Use either Android Studio or use the following bash
+Install or create an emulator:
 
 ```bash
 sdkmanager "system-images;android-36;google_apis;x86_64"
@@ -80,30 +197,36 @@ avdmanager create avd \
   -d "pixel_6"
 ```
 
-You can use whatever name or device, but keep the API version recent.
-
-## Install FRIDA on emulator
-
-Firstly install FRIDA tools locally
+Install Frida tools locally:
 
 ```bash
-pip install frida-tools
+python3 -m pip install frida-tools
 ```
 
-Then install FRIDA server, this downloads from g
+Install `frida-server` on the emulator:
 
 ```bash
-# the current version of FRIDA is 17.9.1
 curl -L -o frida-server.xz https://github.com/frida/frida/releases/download/17.9.1/frida-server-17.9.1-android-x86_64.xz
 unxz frida-server.xz
 adb root
-adb push frida-server /data/local/tmp/
+adb push frida-server /data/local/tmp/frida-server
 adb shell "chmod 755 /data/local/tmp/frida-server"
 ```
 
-## Start web server
+Start the emulator:
 
-Run this in another terminal.
+```bash
+emulator @android
+```
+
+Start `frida-server`:
+
+```bash
+adb root
+adb shell "/data/local/tmp/frida-server >/dev/null 2>&1 &"
+```
+
+Run the demo web app:
 
 ```bash
 cd web
@@ -111,68 +234,8 @@ npm install
 npm run dev
 ```
 
-## Run Frida
-
-Run this in another terminal.
+Run Sentry against the demo APK in local mode:
 
 ```bash
-adb root
-adb reverse tcp:5173 tcp:5173 # open for web server
-adb shell "/data/local/tmp/frida-server &"
+SENTRY_RUNNER=local ./analyse.sh android/target/app.apk com.example.bachelorproject
 ```
-
-## Start emulator
-
-Run this in another terminal.
-
-```bash
-emulator @android
-```
-
-## Install APK on emulator
-
-Install the APK file from the prior step
-
-```bash
-adb install -r android/target/app.apk
-```
-
-## Start app on emulator with FRIDA
-
-```bash
-frida -U -f com.example.bachelorproject -l sentry/hooks/webview.js -l sentry/hooks/getenv.js
-```
-
-You should see output from the FRIDA hooks about WebView activity.
-
-## Generate a WebView Security Report
-
-Reports are generated automatically by `analyse.sh`. You can also regenerate them from an existing log file:
-
-```bash
-python3 sentry/report.py target/output.log --json target/report.json --markdown logs/report.md
-```
-
-If you know which origins are trusted for the target app, pass them explicitly so bridge exposure and remote-content findings can be scored more accurately:
-
-```bash
-python3 sentry/report.py target/output.log \
-  --trusted-origin https://app.example.com \
-  --json target/report.json \
-  --markdown logs/report.md
-```
-
-The report includes an **Origin To Bridge Map** section that groups each observed JavaScript bridge by WebView origin, exposed methods, and bridge calls.
-It also includes a **Sensitive Data Flows** section when values returned by sensitive-looking bridge methods reach JavaScript sinks such as `fetch`, XHR, `sendBeacon`, navigation APIs, `postMessage`, `eval`, or storage.
-
-## WebTUI Report Interface
-
-The `/tui` folder contains a standalone WebTUI-based report viewer for Sentry output. It is separate from the `/web` demo app, so the demo remains a target for WebView analysis.
-
-```bash
-cd tui
-npm install
-npm run dev
-```
-
-To view a real report, copy or serve `target/report.json` as `tui/public/report.json`; otherwise the interface starts with sample data.
