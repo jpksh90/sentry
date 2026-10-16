@@ -6,4 +6,8 @@ __pycache__/
 target/
 logs/
 benchmark-results/
+sentry/build/
 frida-server
+
+# Claude Code per-user settings
+.claude/settings.local.json
