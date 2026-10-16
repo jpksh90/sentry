@@ -6,4 +6,5 @@ __pycache__/
 target/
 logs/
 benchmark-results/
+sentry/build/
 frida-server

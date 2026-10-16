@@ -29,7 +29,7 @@ Run an APK and let Sentry extract the package name:
 ./analyse.sh path/to/app.apk
 ```
 
-Package extraction requires `aapt` on `PATH` or installed through Homebrew at `/opt/homebrew/bin/aapt` or `/usr/local/bin/aapt`.
+Package extraction requires `aapt`. It is looked up on `PATH`, then in the newest `$ANDROID_HOME` (or `$ANDROID_SDK_ROOT`) `build-tools/` directory, then at `/opt/homebrew/bin/aapt` or `/usr/local/bin/aapt`.
 
 ## Outputs
 
@@ -41,6 +41,24 @@ Package extraction requires `aapt` on `PATH` or installed through Homebrew at `/
 - `target/report.json`: machine-readable report with risk score, findings, evidence, WebView inventory, sensitive data flows, and origin-to-bridge map
 
 If no Sentry events are captured, report generation is skipped so empty runs are not mistaken for clean results.
+
+## Project layout
+
+The analysis toolchain lives under `sentry/`, in three areas:
+
+| Directory | What goes there |
+|---|---|
+| [`sentry/browser/`](sentry/browser/README.md) | Code that runs **inside WebView pages**: the in-page observer, bridge-taint wrappers and the probe. |
+| [`sentry/native/`](sentry/native/README.md) | Frida hooks **in the app process**, one module per Android API family (lifecycle, settings, clients, JS bridge, JS evaluation, permissions, environment). |
+| [`sentry/core/`](sentry/core/README.md) | Everything else: the event vocabulary, the agent bundler, `analyse.sh` orchestration, the Docker and local runners, the report generator and the benchmark runner. |
+
+`analyse.sh`, `scripts/run-benchmarks-linux.sh` and `sentry/report.py` are thin launchers into `sentry/core/`. The Frida agent is built from all three areas into a single script by `sentry/core/agent/build_agent.py`. The local runner does this on every run, and the Docker image does it at build time.
+
+Run the test suite with:
+
+```bash
+python3 -m unittest discover -s tests -t .
+```
 
 ## Runner Modes
 
@@ -165,3 +183,11 @@ Pass the package name explicitly:
 ```
 
 or install `aapt` so `analyse.sh` can extract it automatically.
+
+Docker mode still runs old hooks after updating Sentry
+
+An existing `sentry` image keeps the agent it was built with. Rebuild the images after updating:
+
+```bash
+docker compose build sentry run-frida-server
+```

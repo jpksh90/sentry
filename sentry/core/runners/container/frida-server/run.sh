@@ -1,4 +1,5 @@
 #!/bin/sh
+# core/runners/container: installs and starts frida-server on the emulator for Docker mode.
 set -eu
 
 sleep 20 # FIXME: race condition fix

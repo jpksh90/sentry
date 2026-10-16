@@ -1,0 +1,41 @@
+"""core/ keeps detection, rendering, I/O and orchestration apart (FR-010, FR-012, FR-013, SC-007)."""
+
+from __future__ import annotations
+
+import re
+import unittest
+
+from tests.helpers import SENTRY_DIR
+from tests.layering_helpers import assert_has_header, assert_max_lines, assert_no_pattern, iter_files
+
+CORE = SENTRY_DIR / "core"
+REPORT = CORE / "report"
+
+
+class CoreLayering(unittest.TestCase):
+    def test_rules_do_no_io(self) -> None:
+        files = iter_files(REPORT / "rules", [".py"])
+        for pattern in (r"\bopen\(", r"\.write_text\(", r"\.write\(", r"\bprint\(", r"\bPath\("):
+            assert_no_pattern(self, files, pattern, "detectors must not do file I/O or print")
+
+    def test_rendering_and_tracking_do_not_detect(self) -> None:
+        for name in ("markdown.py", "assemble.py", "tracker.py"):
+            text = (REPORT / name).read_text(encoding="utf-8")
+            self.assertIsNone(re.search(r"^\s*(from|import)\s+core\.report\.(rules|findings)\b", text, re.M), f"{name} imports rules/findings")
+
+    def test_report_independent_of_instrumentation(self) -> None:
+        assert_no_pattern(self, iter_files(REPORT, [".py"]), r"\b(browser|native)/", "report must not depend on browser/ or native/")
+
+    def test_sizes(self) -> None:
+        assert_max_lines(self, iter_files(REPORT, [".py"]), 340)
+        assert_max_lines(self, iter_files(CORE / "run", [".sh"]), 72)
+        assert_max_lines(self, iter_files(CORE / "runners", [".sh"]), 72)
+        assert_max_lines(self, iter_files(CORE / "benchmark", [".sh"]), 53)
+
+    def test_headers(self) -> None:
+        for path in iter_files(CORE, [".py", ".sh", ".js"]):
+            assert_has_header(self, path)
+
+
+if __name__ == "__main__":
+    unittest.main()

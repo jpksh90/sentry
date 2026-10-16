@@ -24,7 +24,7 @@ services:
       "
 
   run-frida-server:
-    build: ./run-frida-server
+    build: ./sentry/core/runners/container/frida-server
     container_name: run-frida-server
     restart: "no"
 
