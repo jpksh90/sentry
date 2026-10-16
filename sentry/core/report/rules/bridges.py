@@ -1,7 +1,5 @@
 """core/report/rules: findings for exposed JavaScript bridges, sensitive bridge methods and remote bridge calls."""
 
-from __future__ import annotations
-
 from typing import Any
 
 from core.report.findings import FindingStore
