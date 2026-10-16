@@ -121,3 +121,21 @@ Each entry gives the decision, why it was made, and what else was considered.
 
 - **Decision**: `static/discover.py` imports `SENSITIVE_METHOD_RE` from `core/report/rules/catalog.py`, the same pattern the report's runtime rule uses.
 - **Rationale**: One source of truth for FR-009. It is the only dependency from `static/` into `report/`, and the reverse dependency is forbidden by a layering test.
+
+## R12. Instrumenting discovered bridges (added 2026-10-16)
+
+- **Decision**: The agent bundler takes `--static-bridges <artifact>` and embeds `const STATIC_BRIDGES = Object.freeze([...])`.
+  - Each entry is one method target: `{className, method, args, interfaceName}`.
+  - `className` is the **declaring** class.
+  - `args` uses `Class.getName()` form (`[B`, `[Ljava.lang.String;`), as Frida overloads and the runtime signatures expect.
+  - `interfaceName` is set only when exactly one resolved name maps to the class.
+
+  `native/static_bridges.js` hooks every target when the agent loads, through the same call hook `javascript_bridge.js` uses (`ctx.hookBridgeCall`), so the two paths share one dedupe table. Classes that aren't loadable yet (lazily loaded, or behind another class loader) are retried on each polling tick, up to 60 ticks. Each attempt tries `Java.use`, then every loader from `Java.enumerateClassLoadersSync()`.
+- **Delivery**:
+  - The local runner passes the artifact when it builds the agent for each run.
+  - The `sentry` container rebuilds the agent into `/sentry/target/agent.js` when the artifact is present, and falls back to the prebuilt `/sentry/build/agent.js` if the build fails. It prints nothing, because its stdout is the event stream.
+- **Events**: no new event type, because the vocabulary must stay equal to the legacy agent's. Successful pre-hooks are silent. Failures reuse `js.probe.error` with `source: "bridge.static.hook"`. Calls use the existing `bridge.method.called`. When the registration was never seen, `webViewId` is null and the report files the call under WebView `unknown`.
+- **Alternatives considered**:
+  - *Frida `-P` parameters*: needs an RPC `init` handshake and works differently in the Docker entry.
+  - *Hooking `ClassLoader.loadClass`*: catches every class load, but costs a hook on a very hot path.
+  - *A new event type for "pre-hooked"*: would break the legacy event-vocabulary contract.

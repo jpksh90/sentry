@@ -34,7 +34,8 @@ class LocalRunner(Runner):
 
         adb.ensure_frida_server()
 
-        if build_agent.main(["--out", str(workspace.agent)]) != 0:
+        static = ["--static-bridges", str(workspace.static_bridges)] if workspace.static_bridges.is_file() else []
+        if build_agent.main(["--out", str(workspace.agent), *static]) != 0:
             host.die("Error: failed to build Sentry agent")
 
         device = host.getenv("SENTRY_FRIDA_DEVICE")

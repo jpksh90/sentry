@@ -34,11 +34,11 @@ def report_with(static: Path | None, out: Path):
     return result, json.loads((out / "report.json").read_text(encoding="utf-8")), (out / "report.md").read_text(encoding="utf-8")
 
 
-def run_report_args(out: Path, extra: list[str]):
-    assert not LOG.with_suffix(".args").exists(), "bridge.log is expected to take no extra arguments"
+def run_report_args(out: Path, extra: list[str], log: Path = LOG):
+    assert not log.with_suffix(".args").exists(), f"{log.name} is expected to take no extra arguments"
     out.mkdir(parents=True, exist_ok=True)
     return subprocess.run(
-        [sys.executable, str(REPORT_SCRIPT), str(LOG), "--json", str(out / "report.json"), "--markdown", str(out / "report.md"), *extra],
+        [sys.executable, str(REPORT_SCRIPT), str(log), "--json", str(out / "report.json"), "--markdown", str(out / "report.md"), *extra],
         capture_output=True,
         text=True,
     )
@@ -134,6 +134,25 @@ class StaticReport(unittest.TestCase):
         self.assertEqual(evidence["sensitiveMethods"], ["deleteAll"])
         self.assertEqual(report["summary"]["risk_score"], plain["summary"]["risk_score"])
         self.assertEqual(by_name["AppBridge"]["sensitive_methods"], ["getToken"])
+
+
+    def test_pre_instrumented_call_counts_as_runtime_evidence(self) -> None:
+        """A call logged by a static pre-instrumentation hook, with no bridge.added event, still confirms the bridge."""
+        call = {
+            "type": "bridge.method.called",
+            "timestamp": "2026-01-01T00:00:09.000Z",
+            "data": {"webViewId": None, "interfaceName": None, "className": "com.example.Hidden", "methodName": "deleteAll",
+                     "args": [], "retval": None, "error": None},
+        }
+        log = self.out / "calls.log"
+        log.write_text(LOG.read_text(encoding="utf-8") + json.dumps(call) + "\n", encoding="utf-8")
+        run_report_args(self.out / "r", ["--static-bridges", str(STATIC / "synthetic_mixed.json")], log)
+        report = json.loads((self.out / "r" / "report.json").read_text(encoding="utf-8"))
+        by_class = {b["className"]: b for b in report["static_bridges"]["bridges"]}
+        self.assertEqual(by_class["com.example.Hidden"]["provenance"], "static+runtime")
+        self.assertEqual(by_class["com.example.Hidden"]["runtime_webviews"], ["unknown"])
+        self.assertNotIn("WV-STATIC-BRIDGE-UNOBSERVED", {f["rule_id"] for f in report["findings"]})
+        self.assertNotIn(None, {b["interfaceName"] for b in report["static_bridges"]["bridges"] if b["provenance"] == "runtime-only"})
 
 
 if __name__ == "__main__":

@@ -59,5 +59,63 @@ class AgentBundle(unittest.TestCase):
             self.assertIn("build_agent: duplicate top-level name 'dup'", result.stderr)
 
 
+class StaticBridgeTargets(unittest.TestCase):
+    """--static-bridges embeds the statically discovered methods as STATIC_BRIDGES (specs/002 contracts/agent-static-bridges.md)."""
+
+    def setUp(self) -> None:
+        sys.path.insert(0, str(SENTRY_DIR))
+        from core.agent import build_agent
+
+        self.builder = build_agent
+
+    def test_default_is_empty(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "a.js"
+            self.assertEqual(build(out).returncode, 0)
+            self.assertIn("const STATIC_BRIDGES = Object.freeze([]);", out.read_text(encoding="utf-8"))
+
+    def test_jvm_names(self) -> None:
+        cases = {"int": "int", "java.lang.String": "java.lang.String", "byte[]": "[B", "java.lang.String[][]": "[[Ljava.lang.String;"}
+        for java_type, expected in cases.items():
+            self.assertEqual(self.builder.jvm_name(java_type), expected)
+
+    def test_targets(self) -> None:
+        artifact = {
+            "schema": 1,
+            "status": "completed",
+            "registrations": [
+                {"name": "Legacy", "class_name": "a.Sub", "candidate_classes": ["a.Sub"], "methods": [
+                    {"name": "getClass", "params": [], "declared_in": "java.lang.Object"},
+                    {"name": "read", "params": ["byte[]", "int"], "declared_in": "a.Base"},
+                ]},
+                {"name": None, "class_name": None, "candidate_classes": ["a.Other"], "methods": []},
+                {"name": "Two", "class_name": "a.Sub", "candidate_classes": ["a.Sub"], "methods": []},
+            ],
+            "bridge_classes": [
+                {"class_name": "a.Sub", "methods": [{"name": "read", "params": ["byte[]", "int"], "declared_in": "a.Base"}]},
+                {"class_name": "a.Other", "methods": [{"name": "ping", "params": [], "declared_in": "a.Other"}]},
+            ],
+        }
+        targets = [{k: t[k] for k in ("className", "method", "args", "interfaceName")} for t in self.builder.static_targets(artifact)]
+        self.assertEqual(
+            targets,
+            [
+                {"className": "a.Base", "method": "read", "args": ["[B", "int"], "interfaceName": None},  # two names: Legacy, Two
+                {"className": "a.Other", "method": "ping", "args": [], "interfaceName": None},
+            ],
+        )
+        self.assertEqual(self.builder.static_targets({**artifact, "status": "failed"}), [])
+        self.assertEqual(self.builder.static_targets({**artifact, "schema": 2}), [])
+
+    def test_unreadable_artifact_only_warns(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bad, out = Path(tmp) / "bad.json", Path(tmp) / "a.js"
+            bad.write_text("{", encoding="utf-8")
+            result = build(out, "--static-bridges", str(bad))
+            self.assertEqual(result.returncode, 0)
+            self.assertIn("build_agent: ignoring static bridges", result.stderr)
+            self.assertIn("const STATIC_BRIDGES = Object.freeze([]);", out.read_text(encoding="utf-8"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -21,6 +21,7 @@
     {"kind": "source", "file": "native/webview_clients.js"},
     {"kind": "source", "file": "native/javascript_bridge.js"},
     {"kind": "source", "file": "native/javascript_evaluation.js"},
+    {"kind": "source", "file": "native/static_bridges.js"},
     {"kind": "source", "file": "native/main.js"},
     {"kind": "source", "file": "native/environment.js"}
   ]

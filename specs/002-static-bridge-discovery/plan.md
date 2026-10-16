@@ -168,3 +168,20 @@ The implementation added a few things to the structure above:
 | SC-004 goldens byte-identical | | `test_report_golden`, `test_report_static.test_without_option_output_is_unchanged` |
 | SC-005 failure isolation | | `test_static_benchmarks.test_truncated_apk_fails_cleanly`, `test_static_discovery_run` |
 | SC-006 coverage gaps readable from the report | | `test_report_static` goldens (review of `report.md`) |
+
+## Revision: instrumenting discovered bridges (2026-10-16)
+
+Static results now also drive the Frida hooks (spec FR-019 to FR-023, research R12, [contracts/agent-static-bridges.md](contracts/agent-static-bridges.md)). Changed or new files:
+
+- `sentry/core/agent/build_agent.py`: `--static-bridges`, plus `static_targets()` and `jvm_name()`; always emits `STATIC_BRIDGES`.
+- `sentry/native/static_bridges.js` (new): early hooks with class-loader fallback and retries on polling ticks.
+- `sentry/native/javascript_bridge.js`: the call hook is extracted into `hookBridgeCall` and exposed on `ctx`. Behaviour is unchanged; the legacy parity test still passes.
+- `sentry/native/main.js` and `sentry/core/agent/manifest.json`: install the module and retry on each tick.
+- `sentry/core/runners/local.py` and `sentry/core/runners/container/entry.py`: pass the artifact to the agent build.
+- `sentry/core/report/correlate.py`: calls count as runtime evidence.
+
+Verified by:
+- `test_native_parity.StaticPreInstrumentation`: a never-registered bridge call is logged, and the rest of the event stream equals legacy;
+- `test_agent_bundle.StaticBridgeTargets`;
+- `test_runners` (local and container agent builds);
+- `test_report_static.test_pre_instrumented_call_counts_as_runtime_evidence`.

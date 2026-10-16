@@ -13,6 +13,7 @@ Frida hooks that run **in the app process** and intercept Android WebView APIs. 
 | JavaScript evaluation | `javascript_evaluation.js` | `js.evaluated` |
 | Permissions | `permissions.js` | `permission.requested`, `permission.grant.called`, `permission.deny.called` |
 | Environment | `environment.js` | none (rewrites `System.getenv("URL")` for the demo app) |
+| Statically discovered bridges | `static_bridges.js` | `bridge.method.called`, `js.probe.error` (hooks the methods listed in `STATIC_BRIDGES` at startup, through `ctx.hookBridgeCall`) |
 | Entry point | `main.js` | none (installs everything, polls and flushes) |
 
 ## The `ctx` object
@@ -36,7 +37,8 @@ The hooks are installed in the same order as the original script:
 6. bridge
 7. settings
 8. permission grant and deny
-9. the poll/flush timer
+9. statically discovered bridge methods (`static_bridges.js`; retried on every tick until loaded, up to 60 ticks)
+10. the poll/flush timer
 
 `environment.js` comes **after** `main.js` in the bundle and uses its own `Java.perform`. The original agent loaded `getenv.js` as a second script, and keeping a separate callback means a failure in the WebView hooks still can't stop the `getenv` shim from being installed.
 

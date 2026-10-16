@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tests.helpers import SENTRY_DIR
 
@@ -114,7 +115,37 @@ class LocalRunnerTests(unittest.TestCase):
                          "Start an emulator first, or set SENTRY_RUNNER=docker on a Linux host with /dev/kvm.\n")
 
 
+    def test_agent_gets_static_bridges(self) -> None:
+        def respond(cmd):
+            return Result(0, "1\r\n") if "getprop" in cmd else Result(0)
+
+        for with_artifact in (True, False):
+            with self.subTest(with_artifact=with_artifact), tempfile.TemporaryDirectory() as tmp:
+                workspace = Workspace(Path(tmp))
+                workspace.target.mkdir()
+                if with_artifact:
+                    workspace.static_bridges.write_text("{}", encoding="utf-8")
+                ctx = RunContext(FakeHost(respond=respond), workspace, "app.apk", "com.example.app", True)
+                with mock.patch("core.runners.local.build_agent.main", return_value=0) as build:
+                    capture(LocalRunner().run, ctx)
+                expected = ["--out", str(workspace.agent)]
+                if with_artifact:
+                    expected += ["--static-bridges", str(workspace.static_bridges)]
+                build.assert_called_once_with(expected)
+
+
 class ContainerEntryPoints(unittest.TestCase):
+    def test_agent_path_uses_static_bridges(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact, out = Path(tmp) / "static-bridges.json", Path(tmp) / "agent.js"
+            self.assertEqual(entry.agent_path(artifact, out), entry.AGENT)
+            artifact.write_text("{}", encoding="utf-8")
+            with mock.patch("core.runners.container.entry.build_agent.main", return_value=0) as build:
+                self.assertEqual(entry.agent_path(artifact, out), str(out))
+            build.assert_called_once_with(["--root", "/sentry", "--out", str(out), "--static-bridges", str(artifact)])
+            with mock.patch("core.runners.container.entry.build_agent.main", return_value=1):
+                self.assertEqual(entry.agent_path(artifact, out), entry.AGENT)
+
     def test_sentry_entry(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             env_file = Path(tmp) / ".env"

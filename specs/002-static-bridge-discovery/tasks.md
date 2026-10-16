@@ -363,6 +363,22 @@ description: "Task list for static JavaScript bridge discovery"
 
 ---
 
+## Phase 7: Instrument discovered bridges (added 2026-10-16, FR-019 to FR-023)
+
+**Goal**: Hook every statically discovered bridge method as soon as the agent starts, so calls are logged even when the registration is missed.
+
+**Independent Test**: `python3 -m unittest tests.test_native_parity`. A statically hooked, never-registered `com.example.Hidden.deleteAll()` call is logged, and every other event equals legacy.
+
+- [X] T046 Add `--static-bridges`, `static_targets()`, `jvm_name()` and an always-emitted `STATIC_BRIDGES` block to `sentry/core/agent/build_agent.py`, per contracts/agent-static-bridges.md.
+- [X] T047 Extract the call hook in `sentry/native/javascript_bridge.js` into `hookBridgeCall(className, methodName, methodArgs, interfaceName, loadedClass, errorSource)` and expose it as `ctx.hookBridgeCall`, keeping the legacy event stream identical.
+- [X] T048 Add `sentry/native/static_bridges.js` (`installStaticBridgeHooks`, class-loader fallback, 60-tick retry). Register it in `sentry/core/agent/manifest.json` and `sentry/native/main.js`, and add it to `tests/test_layering_native.py`.
+- [X] T049 Pass the artifact to agent builds in `sentry/core/runners/local.py` and `sentry/core/runners/container/entry.py` (rebuild into `/sentry/target/agent.js`, falling back to the prebuilt agent).
+- [X] T050 Count bridge calls as runtime evidence in `sentry/core/report/correlate.py`; pre-instrumented calls may have no interface name.
+- [X] T051 [P] Add tests: `tests/test_agent_bundle.py` (StaticBridgeTargets), `tests/test_native_parity.py` (StaticPreInstrumentation, plus a `static` mode in `tests/tools/native_harness.js`), `tests/test_runners.py` and `tests/test_report_static.py`.
+- [X] T052 [P] Update the docs: `README.md`, `sentry/core/README.md`, `sentry/native/README.md`, and the spec, plan and research for this feature.
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies

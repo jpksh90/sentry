@@ -35,8 +35,10 @@ Java.perform(() => {
   installJavascriptBridgeHooks(ctx);
   installWebViewSettingsHooks(ctx);
   installPermissionHooks(ctx);
+  installStaticBridgeHooks(ctx);
 
   setInterval(() => {
+    ctx.retryStaticBridgeHooks();
     ctx.pollAll();
 
     flush();

@@ -105,6 +105,11 @@ The analyst who wants a faster run, or a run that matches earlier output exactly
 - **FR-016**: With discovery disabled, the run's console output, workspace contents and reports MUST be identical to Sentry's behaviour before this feature.
 - **FR-017**: The benchmark runner MUST inherit the default (discovery on) through the analysis command. Its per-APK result archive MUST include the static discovery artifact when one is produced.
 - **FR-018**: The option MUST be documented in the command's usage text and in the README.
+- **FR-019**: When static discovery completes, every exposed method it found MUST be instrumented when the dynamic run starts, before any `addJavascriptInterface` call. This covers methods of registered classes and of bridge-capable classes with no discovered registration. Calls to these methods MUST be logged as bridge calls even when the registration itself is never observed.
+- **FR-020**: Pre-instrumentation MUST NOT hook framework classes (`java.*`, `javax.*`, `android.*`, `dalvik.*`, `kotlin.*`). The pre-API-17 exposure of `java.lang.Object` methods is reported, never hooked.
+- **FR-021**: A method instrumented both statically and at registration time MUST be hooked once. When the registration is observed, the event stream MUST be identical to a run without pre-instrumentation.
+- **FR-022**: Pre-instrumentation MUST work with both runners. With discovery disabled or failed, no method is pre-instrumented, and a missing or unreadable artifact MUST NOT stop the agent from being built.
+- **FR-023**: In the report, a logged call to a statically discovered bridge MUST count as runtime evidence (`static+runtime`), even without a registration event.
 
 ### Key Entities
 
@@ -130,7 +135,7 @@ The analyst who wants a faster run, or a run that matches earlier output exactly
 - "Functions annotated with addJavaScriptInterface" means methods carrying the `@JavascriptInterface` annotation, together with the `addJavascriptInterface(object, name)` calls that register them. That pair is what gives the bridge object name.
 - The static pass works on the compiled APK alone (bytecode and manifest). It does not need source code, a device or network access. Code loaded at run time (downloaded dex, reflection-built names, native code) is out of scope. Such bridges show up only as "runtime only" through the existing dynamic hooks.
 - Name resolution covers constants within the calling method and string constants held in fields. Following values across methods or through resources is best-effort, and anything not resolved is reported as "unresolved", not guessed.
-- Static results are used for reporting and comparison only. Using them to pre-arm or guide the runtime hooks is out of scope for this feature.
+- Static results also guide the runtime hooks: see FR-019 to FR-023 (added 2026-10-16 at the project owner's request).
 - Static-only bridges are reported as findings at a lower confidence than runtime-confirmed ones. The exact severity mapping is settled during planning, within the rules of FR-013.
 - The extra tooling the static pass needs is acceptable as a new dependency for both the local and the Docker runners. It is made available the same way the existing tools are (on `PATH`, or bundled in the Docker image).
 - The negated form `--no-discover-bridge-interfaces` follows common command-line convention for turning off an option that is on by default.

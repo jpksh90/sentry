@@ -47,6 +47,8 @@ If no Sentry events are captured, report generation is skipped so empty runs are
 
 Before the dynamic run starts, Sentry scans the APK for JavaScript bridges. This is on by default. It finds every method annotated with `@JavascriptInterface`, and every `addJavascriptInterface(object, name)` call with the bridge name JavaScript sees (for example `window.Android`) and the class behind it. Results go to `target/static-bridges.json`, which is written even if the run captures no events.
 
+Every exposed method the scan finds is then hooked as soon as the app starts, so calls to it are logged even if the run never sees the bridge being registered. Framework classes are never hooked.
+
 When a report is generated, it gains a **Static Bridge Inventory** section that labels each bridge:
 
 - `static+runtime`: found in the APK and registered during the run

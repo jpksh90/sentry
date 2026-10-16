@@ -16,6 +16,7 @@ EXPECTED = {
     "webview_clients.js",
     "javascript_bridge.js",
     "javascript_evaluation.js",
+    "static_bridges.js",
     "permissions.js",
     "environment.js",
     "main.js",

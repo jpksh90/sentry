@@ -9,9 +9,14 @@ from core.report.rules.catalog import SENSITIVE_METHOD_RE
 PROVENANCE_ORDER = {"static+runtime": 0, "static-only": 1, "runtime-only": 2}
 
 
-def runtime_bridges(tracker: Any) -> dict[tuple[str, str | None], dict[str, Any]]:
-    """(interfaceName, className) -> WebView ids and method names seen at runtime."""
-    bridges: dict[tuple[str, str | None], dict[str, Any]] = {}
+def runtime_bridges(tracker: Any) -> dict[tuple[str | None, str | None], dict[str, Any]]:
+    """(interfaceName, className) -> WebView ids and method names seen at runtime.
+
+    A bridge counts as seen when its registration was hooked, or when one of its methods was called. Calls to
+    statically pre-instrumented methods arrive even if the registration was missed (webViewId "unknown",
+    interfaceName possibly null).
+    """
+    bridges: dict[tuple[str | None, str | None], dict[str, Any]] = {}
     for webview_id, state in tracker.webviews.items():
         methods_by_name: dict[str, set[str]] = {}
         for method in state["bridge_methods"]:
@@ -20,11 +25,18 @@ def runtime_bridges(tracker: Any) -> dict[tuple[str, str | None], dict[str, Any]
             entry = bridges.setdefault((name, bridge.get("className")), {"webviews": set(), "methods": set()})
             entry["webviews"].add(webview_id)
             entry["methods"] |= methods_by_name.get(name, set())
+        for call in state["bridge_calls"]:
+            key = (call.get("interfaceName"), call.get("className"))
+            if key not in bridges and any(cls == key[1] and key[0] in (None, name) for name, cls in bridges):
+                continue  # a call on a bridge whose registration was seen: already covered above
+            entry = bridges.setdefault(key, {"webviews": set(), "methods": set()})
+            entry["webviews"].add(webview_id)
+            entry["methods"].add(str(call.get("methodName") or ""))
     return bridges
 
 
-def matches(registration: dict[str, Any], name: str, class_name: str | None) -> bool:
-    if registration["name"] is not None and registration["name"] != name:
+def matches(registration: dict[str, Any], name: str | None, class_name: str | None) -> bool:
+    if registration["name"] is not None and name is not None and registration["name"] != name:
         return False
     if registration["class_name"] is not None:
         return registration["class_name"] == class_name

@@ -18,66 +18,19 @@ function installJavascriptBridgeHooks(ctx) {
     log,
   } = ctx;
 
-  const hookBridgeMethod = (className, method, interfaceName, webViewId) => {
-    const methodName = method.getName().toString();
-    const parameterTypes = method.getParameterTypes();
-    const methodArgs = [];
-
-    for (let i = 0; i < parameterTypes.length; i++) {
-      methodArgs.push(parameterTypes[i].getName().toString());
-    }
-
+  // Installs the call-logging implementation once per signature. Shared with native/static_bridges.js,
+  // which pre-instruments statically discovered methods (passing the class it loaded and its own error source).
+  const hookBridgeCall = (className, methodName, methodArgs, interfaceName, loadedClass, errorSource) => {
     const signature = `${className}.${methodName}(${methodArgs.join(",")})`;
-    const sensitive = SENSITIVE_BRIDGE_METHOD_RE.test(methodName);
-
-    log(EVENT_TYPE.BRIDGE_METHOD_ADDED, {
-      webViewId: webViewId,
-      interfaceName: interfaceName,
-      className: className,
-      method: methodName,
-      args: methodArgs,
-      sensitive: sensitive,
-      pageUrl: webViewsById[webViewId] ? webViewsById[webViewId].lastUrl : null,
-      origin: webViewsById[webViewId]
-        ? webViewsById[webViewId].lastOrigin
-        : null,
-    });
-
-    if (sensitive) {
-      if (!bridgeTaintWrappersByWebView[webViewId]) {
-        bridgeTaintWrappersByWebView[webViewId] = [];
-      }
-
-      const wrapperKey = `${interfaceName}.${methodName}`;
-      const exists = bridgeTaintWrappersByWebView[webViewId].some(
-        (wrapper) => wrapper.key === wrapperKey,
-      );
-
-      if (!exists) {
-        bridgeTaintWrappersByWebView[webViewId].push({
-          key: wrapperKey,
-          interfaceName: interfaceName,
-          methodName: methodName,
-          source: {
-            kind: "javascript-bridge-return",
-            interfaceName: interfaceName,
-            methodName: methodName,
-            className: className,
-            sensitive: true,
-          },
-        });
-      }
-    }
-
     if (hookedBridgeMethods[signature]) return;
     hookedBridgeMethods[signature] = true;
 
     let BridgeClass = null;
     try {
-      BridgeClass = Java.use(className);
+      BridgeClass = loadedClass || Java.use(className);
     } catch (e) {
       log(EVENT_TYPE.JS_PROBE_ERROR, {
-        source: "bridge.hook",
+        source: errorSource,
         className: className,
         method: methodName,
         error: String(e),
@@ -133,13 +86,66 @@ function installJavascriptBridgeHooks(ctx) {
       };
     } catch (e) {
       log(EVENT_TYPE.JS_PROBE_ERROR, {
-        source: "bridge.hook",
+        source: errorSource,
         className: className,
         method: methodName,
         args: methodArgs,
         error: String(e),
       });
     }
+  };
+
+  const hookBridgeMethod = (className, method, interfaceName, webViewId) => {
+    const methodName = method.getName().toString();
+    const parameterTypes = method.getParameterTypes();
+    const methodArgs = [];
+
+    for (let i = 0; i < parameterTypes.length; i++) {
+      methodArgs.push(parameterTypes[i].getName().toString());
+    }
+
+    const sensitive = SENSITIVE_BRIDGE_METHOD_RE.test(methodName);
+
+    log(EVENT_TYPE.BRIDGE_METHOD_ADDED, {
+      webViewId: webViewId,
+      interfaceName: interfaceName,
+      className: className,
+      method: methodName,
+      args: methodArgs,
+      sensitive: sensitive,
+      pageUrl: webViewsById[webViewId] ? webViewsById[webViewId].lastUrl : null,
+      origin: webViewsById[webViewId]
+        ? webViewsById[webViewId].lastOrigin
+        : null,
+    });
+
+    if (sensitive) {
+      if (!bridgeTaintWrappersByWebView[webViewId]) {
+        bridgeTaintWrappersByWebView[webViewId] = [];
+      }
+
+      const wrapperKey = `${interfaceName}.${methodName}`;
+      const exists = bridgeTaintWrappersByWebView[webViewId].some(
+        (wrapper) => wrapper.key === wrapperKey,
+      );
+
+      if (!exists) {
+        bridgeTaintWrappersByWebView[webViewId].push({
+          key: wrapperKey,
+          interfaceName: interfaceName,
+          methodName: methodName,
+          source: {
+            kind: "javascript-bridge-return",
+            interfaceName: interfaceName,
+            methodName: methodName,
+            className: className,
+            sensitive: true,
+          },
+        });
+      }
+    }
+
+    hookBridgeCall(className, methodName, methodArgs, interfaceName, null, "bridge.hook");
   };
 
   const hookAllBridgeMethods = (object, interfaceName, webViewId) => {
@@ -198,4 +204,6 @@ function installJavascriptBridgeHooks(ctx) {
 
     return retval;
   };
+
+  ctx.hookBridgeCall = hookBridgeCall;
 }

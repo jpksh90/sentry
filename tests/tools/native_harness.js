@@ -2,6 +2,8 @@
 // and a simulated page, drive every hook family, and print the emitted events.
 // Usage: node native_harness.js legacy <webview.js> <getenv.js>
 //        node native_harness.js bundle <agent.js>
+//        node native_harness.js static <agent.js>   (bundle scenario, then a call to a statically hooked,
+//                                                   never-registered bridge method com.example.Hidden.deleteAll)
 "use strict";
 
 const fs = require("fs");
@@ -275,6 +277,9 @@ vm.runInContext(
   page,
 );
 intervalFn(); // probe page events + flush
+if (mode === "static") {
+  results.staticCall = impl("com.example.Hidden", "deleteAll", []).call(javaObject("com.example.Hidden")) ?? null;
+}
 intervalFn(); // empty tick
 
 results.evaluatedScripts = evaluated.length;
