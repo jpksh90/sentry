@@ -206,3 +206,35 @@ Observable behavior changes only in cases where one caller used to fail or retur
 ## R10. The constitution
 
 The file `.specify/memory/constitution.md` is still the unfilled template, so there are no ratified principles to check against. The Constitution Check in the plan is therefore **N/A, passing by default**. Running `/speckit-constitution` before `/speckit-tasks` is recommended if the project wants principles enforced, for example "no new runtime dependencies" or "golden-test gate on report changes".
+
+---
+
+## R11. Moving the shell orchestration to Python (follow-up, 2026-10-16)
+
+**Context**: After R5, the orchestration was 16 sourced shell files. The shell traps, pipelines and `set -e` behaviour were hard to follow, and none of it could be unit-tested.
+
+**Decision**: Rewrite the orchestration in stdlib Python using four patterns:
+
+| Pattern | Where | Why |
+|---|---|---|
+| **Facade** | `core/host.py` (`Host`) | It is the only place that touches the environment, `PATH`, platform/KVM detection, processes and the `tee` pipeline. Tests swap in a recording `FakeHost` (`tests/fakes.py`). |
+| **Strategy + Factory** | `core/runners/` (`Runner`, `DockerRunner`, `LocalRunner`, `select_runner`) | Adding a runner means adding a class and registering it. `auto` selection lives in one place. |
+| **Template Method** | `core/run/session.py` (`AnalysisSession.run`) | Fixes the step order (validate → package → runner → preflight → workspace → run). Runners only fill in `preflight` and `run`. |
+| **Adapter** | `core/runners/adb.py` (`Adb`) | Wraps `SENTRY_ADB_SERIAL`, the boot wait and the frida-server startup. |
+
+Shell constructs are mapped as follows:
+- the `EXIT` trap becomes the `report_on_exit` context manager;
+- `trap 'exit 130' INT` and `'exit 143' TERM` become signal handlers that raise `SystemExit`;
+- `echo …; exit 1` becomes `host.die(...)`;
+- `cmd | tee a b` becomes `Host.tee` (exit status ignored, as in the shell pipeline);
+- `set -eu` in the container scripts becomes `Host.run_checked`.
+
+`analyse.sh` and `scripts/run-benchmarks-linux.sh` stay as launchers of about 5 lines, because they are the documented commands (FR-001, FR-006). The `run-frida-server` image now builds from `sentry/` with `core/runners/container/frida_server.Dockerfile` and installs `python3`.
+
+**Verification**:
+- `tests/test_local_simulation.py` runs the legacy shell and the new launcher side by side with fake `adb` and `frida` on `PATH`. It checks identical stdout, event logs, reports, `.env` and adb call sequence, and that Ctrl-C exits 130 with an identical report.
+- The `FakeHost` tests cover the Docker runner, the container entry points and the benchmark suite.
+
+**Size limits (SC-007)**: these are now per Python module: `run/` and `runners/` ≤ 100 lines; `benchmark/suite.py` and `host.py` ≤ 160 lines.
+
+**Alternatives**: keeping the 16 shell modules (rejected: hard to test and maintain); a CLI framework such as Click or Typer (rejected: a new runtime dependency); `invoke`/`make` tasks (rejected: a different interface from the documented commands).

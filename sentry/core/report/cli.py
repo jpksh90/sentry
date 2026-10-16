@@ -39,8 +39,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> int:
-    args = build_arg_parser().parse_args()
+def main(argv: list[str] | None = None) -> int:
+    args = build_arg_parser().parse_args(argv)
     events, skipped = load_events(args.log_file)
     analyzer = Analyzer(set(args.trusted_origin))
     report = analyzer.build_report(events, skipped)

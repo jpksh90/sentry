@@ -28,9 +28,17 @@ class CoreLayering(unittest.TestCase):
 
     def test_sizes(self) -> None:
         assert_max_lines(self, iter_files(REPORT, [".py"]), 340)
-        assert_max_lines(self, iter_files(CORE / "run", [".sh"]), 72)
-        assert_max_lines(self, iter_files(CORE / "runners", [".sh"]), 72)
-        assert_max_lines(self, iter_files(CORE / "benchmark", [".sh"]), 53)
+        assert_max_lines(self, iter_files(CORE / "run", [".py"]), 100)
+        assert_max_lines(self, iter_files(CORE / "runners", [".py"]), 100)
+        assert_max_lines(self, iter_files(CORE / "benchmark", [".py"]), 160)
+        assert_max_lines(self, [CORE / "host.py"], 160)
+
+    def test_no_shell_scripts_in_core(self) -> None:
+        self.assertEqual(iter_files(CORE, [".sh"]), [], "orchestration is Python; shell is only for the root launchers")
+
+    def test_only_host_touches_processes(self) -> None:
+        files = [path for path in iter_files(CORE, [".py"]) if path.name != "host.py" and "report" not in path.parts]
+        assert_no_pattern(self, files, r"\bsubprocess\b|\bos\.system\b", "use core.host.Host for processes")
 
     def test_headers(self) -> None:
         for path in iter_files(CORE, [".py", ".sh", ".js"]):

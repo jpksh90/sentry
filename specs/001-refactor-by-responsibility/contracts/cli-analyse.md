@@ -42,6 +42,7 @@ It is run from the repository root, using `/bin/sh`.
 - `SENTRY_ADB_SERIAL`, when set, adds `-s <serial>` to every adb call.
 
 ### Changed internals (not observable)
+- `analyse.sh` is a launcher. It checks for `python3`, printing the banner and `Error: python3 is not installed` if it is missing. Otherwise it runs `exec python3 -m core.run "$@"` with `SENTRY_PROG="$0"`, so the usage line still shows how the script was invoked. Orchestration lives in `sentry/core/run/` and `sentry/core/runners/` (research R11).
 - The agent is now **one** generated file. The local runner builds it with `python3 sentry/core/agent/build_agent.py --out target/agent.js` just before spawning, then loads it with `-l target/agent.js` instead of the two `-l` hook files. If the build fails, the runner prints `Error: failed to build Sentry agent` and exits 1. This is a new error path that cannot happen with a correct checkout.
 - The Docker image builds `/sentry/build/agent.js` when the image is built.
 
@@ -58,7 +59,7 @@ Everything stays the same:
 
 The project owner approved these on 2026-10-16, as the FR-001 exception. See [research.md R5](../research.md#r5-splitting-the-shell-scripts-and-sharing-helpers).
 
-| Helper | Before | After (shared `sentry/core/run/package.sh`) |
+| Helper | Before | After (shared `sentry/core/run/package.py`) |
 |---|---|---|
 | `find_aapt` | `analyse.sh` searched `PATH`, then Homebrew. The benchmark runner searched `PATH`, then SDK `build-tools`. | Both search `PATH`, then the newest `$ANDROID_HOME`/`$ANDROID_SDK_ROOT` `build-tools/*/aapt`, then `/opt/homebrew/bin/aapt` and `/usr/local/bin/aapt`. The fallback list can be overridden with the **internal, undocumented** variable `SENTRY_AAPT_FALLBACKS`, which exists only for tests and is not part of the user-facing contract. |
 | Package name | `analyse.sh` used `grep package \| cut -d' ' -f2 \| cut -d"'" -f2`, which could return several lines. | Both use `sed -n "s/^package: name='\([^']*\)'.*/\1/p" \| head -n 1`. |

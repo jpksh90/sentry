@@ -20,13 +20,13 @@ The technical approach (details in [research.md](./research.md)):
 - Browser scripts become standalone `.js` files that use placeholder identifiers, rendered at run time with the same `JSON.stringify` escaping as today.
 - One JSON **event vocabulary** is shared by the agent and the report.
 - The report becomes a package that separates loading, state tracking, detectors, findings and scoring, assembly, Markdown and the CLI.
-- The shell scripts are split into sourced modules, with one shared `package.sh`.
+- The orchestration is Python (R11): a `Host` facade, `Runner` strategies chosen by a factory, an `AnalysisSession` template method and a shared `package.py`. Only the two documented launchers remain as shell.
 - Behavior is guarded by **golden reports** (generated with the legacy `report.py` before any code moves), a Node-based browser parity check, an event-stream comparator for live runs, and static layering and size checks.
 
 ## Technical Context
 
 **Language/Version**:
-- POSIX `sh` for `analyse.sh` and the `core/run` libraries; `bash` for the benchmark runner (unchanged).
+- Python 3.10+ (stdlib only) for orchestration, runners, the container entry points and the benchmark runner. `analyse.sh` (POSIX `sh`) and `scripts/run-benchmarks-linux.sh` (`bash`) are launchers of about 5 lines.
 - JavaScript for the Frida agent and the page scripts, using the ES2015+ features the current code already uses.
 - Python 3.10+ for the report and the bundler (the current code uses `X | None` type hints). The container uses 3.14 and the local host 3.14.5.
 
@@ -86,75 +86,24 @@ specs/001-refactor-by-responsibility/
 ### Source Code (repository root)
 
 ```text
-analyse.sh                          # thin POSIX launcher → sentry/core/run/main.sh (sentry_analyse)
-docker-compose.yml                  # run-frida-server build path → sentry/core/runners/container/frida-server
-scripts/run-benchmarks-linux.sh     # thin launcher → sentry/core/benchmark/run.sh
+analyse.sh                          # 5-line launcher → python3 -m core.run
+docker-compose.yml                  # run-frida-server: context ./sentry, core/runners/container/frida_server.Dockerfile
+scripts/run-benchmarks-linux.sh     # 5-line launcher → python3 -m core.benchmark
 
 sentry/
-├── Dockerfile                      # COPY browser/ native/ core/; RUN build_agent.py → /sentry/build/agent.js
-├── report.py                       # thin launcher → core.report.cli:main (keeps current invocation path)
-│
-├── browser/                        # runs INSIDE WebView pages; depends on nothing
-│   ├── README.md
-│   ├── observer/                   # concatenated into ONE IIFE (shared `state`)
-│   │   ├── 00_namespace.js         # idempotent install, namespace, event buffer
-│   │   ├── 10_serialize.js         # copyArg, report (500-event cap)
-│   │   ├── 20_taint.js             # fingerprint, remember/find taint, taintsForArgs
-│   │   ├── 30_intercepts.js        # intercept(): fetch, open, postMessage, sendBeacon, location, XHR
-│   │   ├── 40_storage.js           # Storage setItem/getItem taint propagation
-│   │   └── 50_bridge_wrapper.js    # state.wrapBridgeMethod
-│   ├── bridge_taint.js             # per-method wrapBridgeMethod invocation
-│   └── probe.js                    # drains state.events → JSON probe result
-│
-├── native/                         # intercepts Android APIs in the app process
-│   ├── README.md
-│   ├── registry.js                 # WebView state registry, keyFor, classNameOf, stringValue, originForUrl
-│   ├── browser_delivery.js         # renderBrowserScript, evaluateOnWebView, inject, bridge wrappers, ProbeCallback, poll
-│   ├── webview_lifecycle.js        # constructors, getSettings, loadUrl/postUrl/loadData/loadDataWithBaseURL
-│   ├── webview_settings.js         # WebSettings setters
-│   ├── webview_clients.js          # setWebViewClient/setWebChromeClient + WebViewClient callbacks
-│   ├── javascript_bridge.js        # addJavascriptInterface, per-method hooks
-│   ├── javascript_evaluation.js    # evaluateJavascript
-│   ├── permissions.js              # onPermissionRequest, geolocation prompt, grant/deny
-│   ├── environment.js              # System.getenv shim (own Java.perform, as today)
-│   └── main.js                     # Java.perform: install families in original order; polling timer
-│
+├── Dockerfile                      # COPY browser/ native/ core/; build agent; CMD python3 -m core.runners.container.entry
+├── report.py                       # thin launcher → core.report.cli:main
+├── browser/                        # runs INSIDE WebView pages (see browser/README.md)
+├── native/                         # Frida hooks, one module per API family (see native/README.md)
 └── core/
-    ├── README.md
-    ├── __init__.py
-    ├── events/
-    │   ├── event_types.json        # THE vocabulary (single source)
-    │   └── __init__.py             # EventType constants for Python
-    ├── agent/
-    │   ├── manifest.json           # ordered bundle inputs
-    │   ├── build_agent.py          # stdlib bundler → agent.js
-    │   ├── sanitize.js             # sanitize()
-    │   └── emitter.js              # message queue, log(), flush()
-    ├── run/
-    │   ├── main.sh                 # sentry_analyse: validate → package → runner → workspace → traps → dispatch
-    │   ├── common.sh               # banner, check_missing_commands
-    │   ├── package.sh              # find_aapt, apk_package_name (shared with benchmark)
-    │   ├── workspace.sh            # target/, logs/, app.apk, .env
-    │   └── report.sh               # generate_report (EXIT trap)
-    ├── runners/
-    │   ├── docker.sh               # compose up + capture
-    │   ├── local.sh                # run_local: preconditions, install, build agent, spawn + capture
-    │   ├── local_device.sh         # adb_cmd, wait_for_boot, ensure_frida_server
-    │   └── container/
-    │       ├── entry.sh            # former sentry/run.sh
-    │       └── frida-server/       # former run-frida-server/ (Dockerfile, run.sh)
-    ├── report/
-    │   ├── __init__.py
-    │   ├── cli.py  loader.py  values.py  urls.py
-    │   ├── tracker.py  findings.py  analyzer.py  assemble.py  markdown.py
-    │   └── rules/
-    │       ├── __init__.py         # detector registry (event type → detectors)
-    │       ├── catalog.py          # severities, DANGEROUS_SETTINGS, regexes, sink sets
-    │       ├── settings.py  navigation.py  bridges.py  permissions.py  javascript.py
-    └── benchmark/
-        ├── run.sh                  # args, preconditions, main loop (former scripts/run-benchmarks-linux.sh)
-        ├── run_one.sh              # run_one: one APK under timeout, status mapping
-        └── archive.sh              # archive_outputs: per-APK results layout
+    ├── host.py                     # Facade: env, PATH, platform/KVM, processes, tee
+    ├── events/                     # event_types.json (THE vocabulary) + EventType
+    ├── agent/                      # manifest.json, build_agent.py, sanitize.js, emitter.js
+    ├── run/                        # session.py (Template Method), package.py, workspace.py, reporting.py, __main__.py
+    ├── runners/                    # base.py, docker.py, local.py (Strategy), adb.py (Adapter), __init__.py (Factory)
+    │   └── container/              # entry.py, frida_server.py, frida_server.Dockerfile
+    ├── report/                     # cli, loader, values, urls, tracker, findings, analyzer, assemble, markdown, rules/
+    └── benchmark/                  # suite.py (BenchmarkSuite), __main__.py
 
 tests/
 ├── fixtures/
@@ -169,7 +118,9 @@ tests/
 ├── test_agent_bundle.py
 ├── test_browser_parity.py          # skipped without node
 ├── test_native_parity.py           # mocked Java runtime; skipped without node
-├── test_cli_contract.py  test_events.py  test_package_sh.py  test_extension_point.py
+├── test_cli_contract.py  test_events.py  test_package.py  test_extension_point.py
+├── test_local_simulation.py  test_runners.py  test_benchmark.py   # fake adb/frida, FakeHost
+├── fakes.py
 ├── layering_helpers.py
 └── test_layering_{browser,native,core,layout}.py
 ```

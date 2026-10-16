@@ -178,7 +178,7 @@ A maintainer adds a new detection rule, changes report formatting, or changes ho
   - a new browser-side observation
   - a change to a native hook family
   - a new detection rule
-- **SC-007**: No sub-area exceeds roughly one-third of the size of the original unit it was carved from, so each sub-area can be read in one sitting. This applies to the WebView hooks, the report generator, the analysis entry point and the benchmark runner.
+- **SC-007**: No sub-area exceeds roughly one-third of the size of the original unit it was carved from, so each sub-area can be read in one sitting. This applies to the WebView hooks, the report generator, the analysis entry point and the benchmark runner. After the orchestration moved to Python (research R11), its modules are limited to 100 lines (`run/`, `runners/`) and 160 lines (`benchmark/suite.py`, `host.py`).
 
 ## Assumptions
 

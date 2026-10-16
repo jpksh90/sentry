@@ -74,12 +74,12 @@ def build(root: Path, manifest_path: Path) -> str:
     return "\n\n".join(chunks) + "\n"
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=DEFAULT_ROOT, help="Directory containing browser/, native/ and core/.")
     parser.add_argument("--manifest", type=Path, default=None, help="Manifest path (default: <root>/core/agent/manifest.json).")
     parser.add_argument("--out", type=Path, required=True, help="Output path for the bundled agent.")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     root = args.root.resolve()
     manifest = args.manifest or root / "core" / "agent" / "manifest.json"

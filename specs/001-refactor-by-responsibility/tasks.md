@@ -515,6 +515,27 @@ Do these steps in order. Each one moves code out of `sentry/core/report/cli.py` 
 
 ---
 
+## Phase 8: Shell orchestration → Python (follow-up, research R11)
+
+**Purpose**: replace the 16 shell modules with tested Python, using a Facade (`Host`), Strategy + Factory (runners), a Template Method (`AnalysisSession`) and an Adapter (`Adb`).
+
+- [X] T104 Create `sentry/core/host.py`: the `Host` facade (`getenv`, `which`, `is_linux`, `has_kvm`, `echo`, `die`, `run`, `run_checked`, `tee`, `sleep`) and `require_commands`.
+- [X] T105 Create `sentry/core/run/` in Python: `package.py` (shared `find_aapt`, `apk_package_name`), `workspace.py`, `reporting.py` (`report_on_exit`), `session.py` (`AnalysisSession`, signal handlers) and `__main__.py`.
+- [X] T106 Create `sentry/core/runners/` in Python: `base.py` (`Runner`, `RunContext`), `docker.py`, `local.py`, `adb.py`, and `__init__.py` (the `RUNNERS` registry and `select_runner`).
+- [X] T107 Replace the container scripts with `sentry/core/runners/container/entry.py` and `frida_server.py`. Move the frida-server Dockerfile to `sentry/core/runners/container/frida_server.Dockerfile` (build context `sentry/`, with `python3` installed), and update `sentry/Dockerfile` and `docker-compose.yml`.
+- [X] T108 Create `sentry/core/benchmark/suite.py` (`BenchmarkSuite`) and `__main__.py`, keeping the usage text, messages, preflight order, status mapping and archive layout.
+- [X] T109 Reduce `analyse.sh` and `scripts/run-benchmarks-linux.sh` to launchers into `python3 -m core.run` and `python3 -m core.benchmark`. Delete every `.sh` file under `sentry/core/`.
+- [X] T110 Tests:
+  - `tests/fakes.py` (`FakeHost`, fake adb/frida);
+  - `tests/test_local_simulation.py` (legacy vs new end to end, device env vars, Ctrl-C → 130 + report);
+  - `tests/test_runners.py`;
+  - `tests/test_benchmark.py`;
+  - `tests/test_package.py`, which replaces `test_package_sh.py`;
+  - `tests/test_layering_core.py`, updated with Python size limits, no `.sh` in `core/`, and only `host.py` running processes.
+- [X] T111 Update `sentry/core/README.md` and the spec docs (research R11, the plan, `contracts/cli-analyse.md`, the SC-007 note).
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase dependencies
