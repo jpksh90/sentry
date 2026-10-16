@@ -11,6 +11,8 @@ from pathlib import Path
 
 from tests.helpers import LEGACY_DIR, REPO_ROOT
 
+OPTIONS_LINE = "Options: --[no-]discover-bridge-interfaces[=true|false]  static JavaScript bridge discovery (default: true)"
+
 SCENARIOS = {
     "no_args": ([], {}),
     "missing_file": (["missing.apk", "pkg"], {}),
@@ -28,7 +30,7 @@ class AnalyseContract(unittest.TestCase):
         result = run_analyse(REPO_ROOT, *SCENARIOS["no_args"])
         self.assertEqual(result.returncode, 1)
         self.assertIn("Sentry - version alpha", result.stdout)
-        self.assertIn("Usage: analyse.sh <apk> [<apk-package>]", result.stdout)
+        self.assertIn("Usage: analyse.sh <apk> [<apk-package>]\n" + OPTIONS_LINE + "\n", result.stdout)
 
     def test_missing_file(self) -> None:
         result = run_analyse(REPO_ROOT, *SCENARIOS["missing_file"])
@@ -52,8 +54,20 @@ class AnalyseContract(unittest.TestCase):
                 shutil.copyfile(REPO_ROOT / "README.md", legacy_cwd / "README.md")
                 legacy = run_analyse(legacy_cwd, args, env)
                 current = run_analyse(REPO_ROOT, args, env)
-                self.assertEqual(current.stdout, legacy.stdout)
+                # Intentional deviation (specs/002 contracts/cli-analyse-option.md): usage gains an Options line.
+                expected = legacy.stdout + OPTIONS_LINE + "\n" if name == "no_args" else legacy.stdout
+                self.assertEqual(current.stdout, expected)
                 self.assertEqual(current.returncode, legacy.returncode)
+
+
+    def test_invalid_discovery_value(self) -> None:
+        env_file = REPO_ROOT / "target" / ".env"
+        before = env_file.read_bytes() if env_file.exists() else None
+        result = run_analyse(REPO_ROOT, ["--discover-bridge-interfaces=maybe", "README.md", "pkg"], {})
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Error: invalid value 'maybe' for --discover-bridge-interfaces (expected true or false)", result.stdout)
+        after = env_file.read_bytes() if env_file.exists() else None
+        self.assertEqual(before, after, "an invalid option must not prepare the workspace")
 
 
 class BenchmarkContract(unittest.TestCase):

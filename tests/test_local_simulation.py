@@ -47,12 +47,18 @@ def env_for(root: Path, **extra: str) -> dict[str, str]:
     }
 
 
-def run(kind: str, tmp: Path, **extra: str) -> tuple[subprocess.CompletedProcess, Path]:
+def analyse_args(kind: str, discover: bool) -> list[str]:
+    """Legacy-parity runs switch static discovery off: that is the mode that must match the legacy script (FR-016)."""
+    flag = [] if kind == "legacy" or discover else ["--no-discover-bridge-interfaces"]
+    return ["sh", "analyse.sh", *flag, "app.apk", "com.example.app"]
+
+
+def run(kind: str, tmp: Path, discover: bool = False, **extra: str) -> tuple[subprocess.CompletedProcess, Path]:
     root = tmp / kind
     make_tree(kind, root)
     install_fake_tools(root / "fakebin")
     result = subprocess.run(
-        ["sh", "analyse.sh", "app.apk", "com.example.app"],
+        analyse_args(kind, discover),
         cwd=root,
         env=env_for(root, **extra),
         capture_output=True,
@@ -67,7 +73,7 @@ def interrupted(kind: str, tmp: Path) -> tuple[int, str, Path]:
     make_tree(kind, root)
     install_fake_tools(root / "fakebin")
     process = subprocess.Popen(
-        ["sh", "analyse.sh", "app.apk", "com.example.app"],
+        analyse_args(kind, False),
         cwd=root,
         env=env_for(root, SENTRY_FAKE_HANG="1"),
         stdout=subprocess.PIPE,
@@ -108,6 +114,20 @@ class LocalSimulation(unittest.TestCase):
         self.assertEqual([c for c in current_calls if c.startswith("adb")], [c.replace("./target/", "target/") for c in legacy_calls if c.startswith("adb")])
         self.assertIn("frida -U -f com.example.app -l target/agent.js", current_calls)
         self.assertTrue((current_root / "target" / "agent.js").is_file())
+
+    def test_default_discovery_failure_keeps_the_run(self) -> None:
+        """app.apk is not a zip here: discovery fails, warns, and the run and report still complete (SC-005)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            legacy, _ = run("legacy", Path(tmp))
+            current, root = run("current", Path(tmp), discover=True)
+            artifact = (root / "target" / "static-bridges.json").read_text(encoding="utf-8")
+            report = (root / "target" / "report.json").read_text(encoding="utf-8")
+        self.assertEqual(current.returncode, legacy.returncode)
+        self.assertIn("Warning: static bridge discovery failed: BadZipFile", current.stdout)
+        without_warning = [line for line in current.stdout.splitlines(True) if not line.startswith("Warning: static")]
+        self.assertEqual("".join(without_warning), legacy.stdout)
+        self.assertIn('"status": "failed"', artifact)
+        self.assertIn('"static_bridges"', report)
 
     def test_device_selection_env(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -7,9 +7,10 @@ Everything that is not instrumentation: the event vocabulary shared by every par
 | `events/` | `event_types.json`: **the** event vocabulary. `__init__.py` exposes it to Python as `EventType`. |
 | `agent/` | `build_agent.py` bundles `browser/`, `native/` and the agent runtime (`sanitize.js`, `emitter.js`) into one Frida script, in the order given by `manifest.json`. |
 | `host.py` | **Facade** over the OS: environment, `PATH` lookups, platform/KVM detection, processes and `tee` pipelines. Nothing else in `core/` calls `subprocess`, so tests can swap in a fake host. |
-| `run/` | `analyse.sh` orchestration. `session.py` holds `AnalysisSession`, a **template method** with fixed steps (validate → resolve package → choose runner → preflight → prepare workspace → run → report on exit). Also `package.py` (shared `aapt` lookup), `workspace.py` and `reporting.py`. |
+| `run/` | `analyse.sh` orchestration. `session.py` holds `AnalysisSession`, a **template method** with fixed steps (parse options → validate → resolve package → choose runner → preflight → prepare workspace → **static discovery** → run → report on exit). Also `options.py` (`--[no-]discover-bridge-interfaces`), `discovery.py` (runs the scan, never fails the run), `package.py` (shared `aapt` lookup), `workspace.py` and `reporting.py`. |
+| `static/` | Static APK analysis for JavaScript bridges, standard library only. `apk.py` and `axml.py` read the zip and binary manifest. `dex.py` and `insns.py` read DEX files and Dalvik bytecode. `index.py` is the class index across all dex files. `dataflow.py` resolves the name and object arguments at each `addJavascriptInterface` call within its method. `discover.py` links registrations to their `@JavascriptInterface` methods. Run standalone with `python3 -m core.static <apk>`. Writes `target/static-bridges.json`. |
 | `runners/` | **Strategy**: `Runner` (`base.py`) with `DockerRunner` and `LocalRunner`, chosen by the factory `select_runner()` in `__init__.py`. `adb.py` is the adb adapter (serial, boot wait, frida-server). `container/` holds the Python entry points of the `sentry` and `run-frida-server` containers and the frida-server Dockerfile. |
-| `report/` | The report generator: `loader` → `analyzer` (`tracker` for state, then `rules/` for findings, stored in `findings`) → `assemble` (JSON) and `markdown`; `cli` handles I/O. |
+| `report/` | The report generator: `loader` → `analyzer` (`tracker` for state, then `rules/` for findings, stored in `findings`) → `assemble` (JSON) and `markdown`; `cli` handles I/O. With `--static-bridges`, `correlate` joins the static artifact with the runtime bridges, `rules/static_bridges.py` adds the static-only findings and `markdown_static` renders the inventory. |
 | `benchmark/` | `BenchmarkSuite` in `suite.py` (preflight, one timed `analyse.sh` run per APK, result archive), behind `scripts/run-benchmarks-linux.sh`. |
 
 ## Where does my change go?
@@ -28,6 +29,9 @@ Everything that is not instrumentation: the event vocabulary shared by every par
 | `aapt` lookup / package name | `run/package.py` |
 | New event type | `events/event_types.json`, emitted from `native/`, consumed in `report/` |
 | Bundle contents or order | `agent/manifest.json` |
+| Static bridge discovery (DEX parsing, call-site resolution) | `static/` |
+| `analyse.sh` options | `run/options.py` |
+| How static and runtime bridges are matched | `report/correlate.py` |
 
 ## Rules
 
@@ -36,5 +40,6 @@ Everything that is not instrumentation: the event vocabulary shared by every par
 - Nothing in `report/` refers to `browser/` or `native/`; the event vocabulary is the only contract between them.
 - Orchestration is Python. The only shell scripts are the root launchers `analyse.sh` and `scripts/run-benchmarks-linux.sh`, which hand off to `python3 -m core.run` and `python3 -m core.benchmark`.
 - Only `host.py` runs processes. Runners print an error and exit with `host.die(...)`, which works like a failing shell script: the report-on-exit step still runs.
-- Size limits: `report/` modules ≤ 340 lines, `run/` and `runners/` modules ≤ 100 lines, `benchmark/` and `host.py` ≤ 160 lines.
-- Before changing anything here, run `python3 -m unittest discover -s tests -t .`. The golden reports in `tests/fixtures/expected/` must stay byte-identical unless a change is meant to alter output.
+- `static/` runs no processes and imports nothing from `run/`, `runners/` or `benchmark/`. Its only `report/` import is `rules/catalog.SENSITIVE_METHOD_RE`. `report/` never imports `static/`: the artifact file is the contract between them.
+- Size limits: `report/` and `static/` modules ≤ 340 lines, `run/` and `runners/` modules ≤ 100 lines, `benchmark/` and `host.py` ≤ 160 lines.
+- Before changing anything here, run `python3 -m unittest discover -s tests -t .`. The golden reports in `tests/fixtures/expected/` must stay byte-identical unless a change is meant to alter output. The static-report goldens in `tests/fixtures/expected_static/` are generated from the current code with `SENTRY_UPDATE_STATIC_GOLDENS=1`.

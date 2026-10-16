@@ -7,6 +7,8 @@ import sys
 from pathlib import Path
 
 from core.host import Host, require_commands
+from core.run.discovery import run_discovery
+from core.run.options import USAGE_OPTIONS, OptionError, parse_args
 from core.run.package import apk_package_name, find_aapt
 from core.run.reporting import report_on_exit
 from core.run.workspace import Workspace
@@ -19,8 +21,12 @@ class AnalysisSession:
         self.prog = prog
         self.workspace = workspace or Workspace(Path("."))
 
-    def run(self, args: list[str]) -> int:
+    def run(self, argv: list[str]) -> int:
         self.host.echo("Sentry - version alpha", "")
+        try:
+            args, discover = parse_args(argv)
+        except OptionError as exc:
+            self.host.die(f"Error: {exc}")
         kvm_available = self.host.has_kvm()
         require_commands(self.host, "python3")
 
@@ -32,13 +38,15 @@ class AnalysisSession:
         runner.preflight(context)
         self.workspace.prepare(apk, package)
         with report_on_exit(self.host, self.workspace):
+            if discover:
+                run_discovery(self.host, self.workspace)
             runner.run(context)
         return 0
 
     def validate_apk(self, args: list[str]) -> str:
         apk = args[0] if args else ""
         if apk == "":
-            self.host.die(f"Usage: {self.prog} <apk> [<apk-package>]")
+            self.host.die(f"Usage: {self.prog} <apk> [<apk-package>]", USAGE_OPTIONS)
         if not Path(apk).is_file():
             self.host.die(f"File not found: {apk}")
         return apk

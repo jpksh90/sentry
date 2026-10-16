@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from core.report.markdown_static import static_section
+
 
 def markdown_report(report: dict[str, Any]) -> str:
     summary = report["summary"]
@@ -157,5 +159,8 @@ def markdown_report(report: dict[str, Any]) -> str:
                                 f"`{call.get('pageUrl')}`"
                             )
                 lines.append("")
+
+    if report.get("static_bridges") is not None:
+        lines.extend(static_section(report["static_bridges"]))
 
     return "\n".join(lines).rstrip() + "\n"

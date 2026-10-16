@@ -32,6 +32,19 @@ class CoreLayering(unittest.TestCase):
         assert_max_lines(self, iter_files(CORE / "runners", [".py"]), 100)
         assert_max_lines(self, iter_files(CORE / "benchmark", [".py"]), 160)
         assert_max_lines(self, [CORE / "host.py"], 160)
+        assert_max_lines(self, iter_files(CORE / "static", [".py"]), 340)
+
+    def test_static_is_self_contained(self) -> None:
+        files = iter_files(CORE / "static", [".py"])
+        assert_no_pattern(self, files, r"^\s*(from|import)\s+core\.(run|runners|benchmark)\b", "static/ must not depend on orchestration")
+        allowed = "from core.report.rules.catalog import SENSITIVE_METHOD_RE"
+        for path in files:
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if re.match(r"^\s*(from|import)\s+core\.report\b", line):
+                    self.assertEqual(line.strip(), allowed, f"{path}: static/ may only import the sensitive-name pattern from report/")
+
+    def test_report_does_not_import_static(self) -> None:
+        assert_no_pattern(self, iter_files(REPORT, [".py"]), r"core\.static", "report/ reads the static artifact, never the static package")
 
     def test_no_shell_scripts_in_core(self) -> None:
         self.assertEqual(iter_files(CORE, [".sh"]), [], "orchestration is Python; shell is only for the root launchers")
