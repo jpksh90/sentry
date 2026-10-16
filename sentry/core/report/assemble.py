@@ -7,10 +7,12 @@ from typing import Any
 from core.report.values import compact
 
 
-def build_report(tracker: Any, findings: Any, events: list[dict[str, Any]], skipped_lines: int) -> dict[str, Any]:
+def build_report(
+    tracker: Any, findings: Any, events: list[dict[str, Any]], skipped_lines: int, static_section: dict[str, Any] | None = None
+) -> dict[str, Any]:
     sorted_findings = findings.sorted_findings()
 
-    return {
+    report = {
         "summary": {
             "risk_score": findings.risk_score(),
             "event_count": len(events),
@@ -24,6 +26,9 @@ def build_report(tracker: Any, findings: Any, events: list[dict[str, Any]], skip
         "webviews": render_webviews(tracker),
         "origin_bridge_map": render_origin_bridge_map(tracker),
     }
+    if static_section is not None:
+        report["static_bridges"] = static_section
+    return report
 
 
 def render_webviews(tracker: Any) -> dict[str, Any]:

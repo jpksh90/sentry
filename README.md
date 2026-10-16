@@ -5,7 +5,7 @@ Sentry is a dynamic analysis tool for hybrid Android apps. It runs an APK under 
 Use `analyse.sh` as the entry point for analysis.
 
 ```bash
-./analyse.sh <APK-FILE> [<APK-PACKAGE>]
+./analyse.sh [--[no-]discover-bridge-interfaces[=true|false]] <APK-FILE> [<APK-PACKAGE>]
 ```
 
 
@@ -39,8 +39,36 @@ Package extraction requires `aapt`. It is looked up on `PATH`, then in the newes
 - `logs/report.md`: human-readable WebView security report
 - `target/output.log`: raw event stream copy used for report generation
 - `target/report.json`: machine-readable report with risk score, findings, evidence, WebView inventory, sensitive data flows, and origin-to-bridge map
+- `target/static-bridges.json`: JavaScript bridges found by static analysis of the APK (see below)
 
 If no Sentry events are captured, report generation is skipped so empty runs are not mistaken for clean results.
+
+## Static bridge discovery
+
+Before the dynamic run starts, Sentry scans the APK for JavaScript bridges. This is on by default. It finds every method annotated with `@JavascriptInterface`, and every `addJavascriptInterface(object, name)` call with the bridge name JavaScript sees (for example `window.Android`) and the class behind it. Results go to `target/static-bridges.json`, which is written even if the run captures no events.
+
+When a report is generated, it gains a **Static Bridge Inventory** section that labels each bridge:
+
+- `static+runtime`: found in the APK and registered during the run
+- `static-only`: found in the APK, but the run never reached the code that registers it. These also get an `info` finding, `WV-STATIC-BRIDGE-UNOBSERVED`, which does not change the risk score.
+- `runtime-only`: registered at runtime but not found statically, for example from dynamically loaded code
+
+To turn discovery off:
+
+```bash
+./analyse.sh --no-discover-bridge-interfaces path/to/app.apk com.example.app
+./analyse.sh --discover-bridge-interfaces=false path/to/app.apk com.example.app
+```
+
+With discovery off, the run behaves exactly as it did before this feature. If discovery itself fails (a packed or corrupt APK, for instance), Sentry prints a warning and the dynamic run continues.
+
+To scan an APK without a device:
+
+```bash
+PYTHONPATH=sentry python3 -m core.static path/to/app.apk [--out static-bridges.json]
+```
+
+Limits: the analysis works within one method at a time. A bridge name built at runtime (concatenated, read from config, or returned by another method) is reported as unresolved, along with where it came from; it is never guessed. Code loaded at runtime (downloaded dex, reflection) shows up only as `runtime-only`. For apps targeting API levels below 17, every public method of a registered object is reported as exposed.
 
 ## Project layout
 
@@ -50,7 +78,7 @@ The analysis toolchain lives under `sentry/`, in three areas:
 |---|---|
 | [`sentry/browser/`](sentry/browser/README.md) | Code that runs **inside WebView pages**: the in-page observer, bridge-taint wrappers and the probe. |
 | [`sentry/native/`](sentry/native/README.md) | Frida hooks **in the app process**, one module per Android API family (lifecycle, settings, clients, JS bridge, JS evaluation, permissions, environment). |
-| [`sentry/core/`](sentry/core/README.md) | Everything else: the event vocabulary, the agent bundler, `analyse.sh` orchestration, the Docker and local runners, the report generator and the benchmark runner. |
+| [`sentry/core/`](sentry/core/README.md) | Everything else: the event vocabulary, the agent bundler, `analyse.sh` orchestration, static bridge discovery, the Docker and local runners, the report generator and the benchmark runner. |
 
 `analyse.sh`, `scripts/run-benchmarks-linux.sh` and `sentry/report.py` are thin launchers into `sentry/core/`. The Frida agent is built from all three areas into a single script by `sentry/core/agent/build_agent.py`. The local runner does this on every run, and the Docker image does it at build time.
 

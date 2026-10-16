@@ -58,6 +58,7 @@ class Suite(unittest.TestCase):
             aapt.chmod(0o755)
             (root / "target").mkdir()
             (root / "target" / "report.json").write_text("{}")
+            (root / "target" / "static-bridges.json").write_text("{}")
 
             def respond(cmd):
                 if cmd[:2] == [str(aapt), "dump"]:
@@ -75,6 +76,7 @@ class Suite(unittest.TestCase):
             self.assertTrue((root / "benchmark-results" / "a" / "runner.log").is_file())
             self.assertTrue((root / "benchmark-results" / "a" / "report.json").is_file())
             self.assertFalse((root / "benchmark-results" / "a" / "report.md").exists())
+            self.assertTrue((root / "benchmark-results" / "a" / "static-bridges.json").is_file())
             timeouts = [c for c in host.calls if c[1][0] == "timeout"]
             self.assertEqual(timeouts[0][1], ["timeout", "-s", "INT", "600", "./analyse.sh", f"{bench}/a.apk", "com.a"])
             self.assertEqual(timeouts[0][2]["env"], {"SENTRY_RUNNER": "docker"})

@@ -10,6 +10,7 @@ from typing import Any, Callable
 
 from core.events import EventType
 from core.report.rules import bridges, javascript, navigation, permissions, settings
+from core.report.rules import static_bridges  # noqa: F401  runs once per report from Analyzer, not per event
 
 Detector = Callable[[dict[str, Any], dict[str, Any], dict[str, Any], Any], None]
 

@@ -20,7 +20,7 @@ Environment:
   SENTRY_BENCHMARK_RESULTS   Output directory (default: benchmark-results)
   SENTRY_BENCHMARK_DIR       Benchmark directory override"""
 
-ARCHIVED = ("status.txt", "runner.log", "output.log", "logs-output.log", "report.json", "report.md")
+ARCHIVED = ("status.txt", "runner.log", "output.log", "logs-output.log", "report.json", "report.md", "static-bridges.json")
 
 
 def run_status(returncode: int) -> str:
@@ -123,6 +123,7 @@ class BenchmarkSuite:
             ("logs/output.log", "logs-output.log"),
             ("target/report.json", "report.json"),
             ("logs/report.md", "report.md"),
+            ("target/static-bridges.json", "static-bridges.json"),
         ):
             if (self.root / source).is_file():
                 shutil.copyfile(self.root / source, out_dir / target)

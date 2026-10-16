@@ -5,7 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from core.events import EventType
-from core.report import assemble, rules
+from core.report import assemble, correlate, rules
+from core.report.rules import static_bridges
 from core.report.findings import FindingStore
 from core.report.tracker import WebViewTracker
 
@@ -24,9 +25,10 @@ TRACKERS = {
 
 
 class Analyzer:
-    def __init__(self, trusted_origins: set[str]) -> None:
+    def __init__(self, trusted_origins: set[str], static: dict[str, Any] | None = None) -> None:
         self.tracker = WebViewTracker(trusted_origins)
         self.findings = FindingStore()
+        self.static = static
 
     def observe(self, event: dict[str, Any]) -> None:
         event_type = event.get("type")
@@ -41,4 +43,8 @@ class Analyzer:
     def build_report(self, events: list[dict[str, Any]], skipped_lines: int) -> dict[str, Any]:
         for event in events:
             self.observe(event)
-        return assemble.build_report(self.tracker, self.findings, events, skipped_lines)
+        section = None
+        if self.static is not None:
+            section = correlate.correlate(self.static, self.tracker)
+            static_bridges.detect_static_unobserved(section, self.findings)
+        return assemble.build_report(self.tracker, self.findings, events, skipped_lines, section)

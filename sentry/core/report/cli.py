@@ -36,13 +36,39 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=[],
         help="Trusted WebView origin, for example https://app.example.com. Can be repeated.",
     )
+    parser.add_argument(
+        "--static-bridges",
+        dest="static_bridges",
+        type=Path,
+        default=None,
+        help="Static bridge discovery artifact (target/static-bridges.json) to compare with the runtime events.",
+    )
     return parser
+
+
+def load_static(path: Path | None) -> dict | None:
+    """The parsed artifact, or None (with a warning) when it cannot be used."""
+    if path is None:
+        return None
+    try:
+        static = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        reason = "not found"
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        reason = "invalid JSON"
+    else:
+        schema = static.get("schema") if isinstance(static, dict) else None
+        if schema == 1:
+            return static
+        reason = f"unsupported schema {schema}"
+    print(f"Warning: ignoring static bridge artifact: {reason}")
+    return None
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
     events, skipped = load_events(args.log_file)
-    analyzer = Analyzer(set(args.trusted_origin))
+    analyzer = Analyzer(set(args.trusted_origin), static=load_static(args.static_bridges))
     report = analyzer.build_report(events, skipped)
 
     args.json_output.parent.mkdir(parents=True, exist_ok=True)

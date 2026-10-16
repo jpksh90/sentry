@@ -1,4 +1,4 @@
-"""core/run: the per-run workspace: target/ (APK, event log, JSON report, agent, .env) and logs/ (copies, Markdown)."""
+"""core/run: the per-run workspace: target/ (APK, event log, JSON report, static bridges, agent, .env) and logs/ (copies, Markdown)."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ class Workspace:
         self.report_md = self.logs / "report.md"
         self.env_file = self.target / ".env"
         self.agent = self.target / "agent.js"
+        self.static_bridges = self.target / "static-bridges.json"
 
     @property
     def capture_files(self) -> list[Path]:
@@ -30,4 +31,5 @@ class Workspace:
         self.output_log.touch()
         self.report_json.unlink(missing_ok=True)
         self.report_md.unlink(missing_ok=True)
+        self.static_bridges.unlink(missing_ok=True)
         self.env_file.write_text(f"APP_PACKAGE={package}\n", encoding="utf-8")
