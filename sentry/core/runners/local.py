@@ -6,7 +6,7 @@ import threading
 
 from core.agent import build_agent
 from core.host import require_commands
-from core.run.intent_launch import launch_profiled_activities
+from core.run.dynamic_drive import drive_coverage
 from core.runners.adb import Adb
 from core.runners.base import RunContext, Runner
 
@@ -41,7 +41,7 @@ class LocalRunner(Runner):
             host.die("Error: failed to build Sentry agent")
 
         launcher = threading.Thread(
-            target=launch_profiled_activities,
+            target=drive_coverage,
             args=(host, adb, workspace, context.package, context.verbose),
             daemon=True,
         )

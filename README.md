@@ -111,6 +111,16 @@ since that's where that mode's adb session to the emulator lives; it reads the s
 `target/intent-data-profile.json` (volume-mounted) and gets `--verbose` via `SENTRY_VERBOSE` in
 `target/.env`, which `analyse.sh` writes alongside `APP_PACKAGE`.
 
+Right after that, in the same background thread, Sentry also crawls the UI it now finds itself on:
+it dumps the screen with `uiautomator dump`, picks a clickable, enabled node belonging to the app
+(preferring one it hasn't tapped yet; once everything has been tapped once, it starts tapping again
+rather than stopping), taps its center with `adb shell input tap`, waits a second for the UI to
+settle, and repeats, up to 20 taps. This needs no intent-data profile at all - it clicks through
+whatever's on screen (the app's own chrome, dialogs, WebView content with native-looking controls),
+so it still runs even when the profile found nothing to launch. Pass `--verbose` to see each tap
+(`ui tap -> <label> at (x, y)`); otherwise it's silent and best-effort like the rest of this
+pipeline - no `uiautomator` on the device, or nothing clickable, just ends the crawl early.
+
 Limits: the analysis works within one method at a time. A bridge name built at runtime (concatenated, read from config, or returned by another method) is reported as unresolved, along with where it came from; it is never guessed. Code loaded at runtime (downloaded dex, reflection) shows up only as `runtime-only`. For apps targeting API levels below 17, every public method of a registered object is reported as exposed.
 
 ## Project layout
