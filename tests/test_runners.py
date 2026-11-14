@@ -116,13 +116,24 @@ class LocalRunnerTests(unittest.TestCase):
                          "Start an emulator first, or set SENTRY_RUNNER=docker on a Linux host with /dev/kvm.\n")
 
 
+class NoOpThread:
+    """Never runs the target: for tests that only care about the foreground adb/frida sequence."""
+
+    def __init__(self, target, args=(), daemon=False) -> None:
+        pass
+
+    def start(self) -> None:
+        pass
+
+
 class ContainerEntryPoints(unittest.TestCase):
     def test_sentry_entry(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             env_file = Path(tmp) / ".env"
             env_file.write_text("APP_PACKAGE=com.example.app\n", encoding="utf-8")
             host = FakeHost(respond=lambda cmd: Result(3 if cmd[0] == "frida" else 0))
-            code = entry.main(host, env_file)
+            with mock.patch("core.runners.container.entry.threading.Thread", NoOpThread):
+                code = entry.main(host, env_file)
         self.assertEqual(code, 3)
         self.assertEqual(
             host.commands_run(),
@@ -165,8 +176,11 @@ class ContainerEntryPoints(unittest.TestCase):
                 code = entry.main(host, env_file)
         self.assertEqual(code, 3)
         shell_calls = [c for c in host.commands_run() if c[:2] == ["adb", "shell"]]
-        self.assertEqual(len(shell_calls), 1)
-        self.assertIn("am start -W -n com.example.app/com.example.app.MainActivity", shell_calls[0][2])
+        am_calls = [c for c in shell_calls if "am start" in c[2]]
+        self.assertEqual(len(am_calls), 1)
+        self.assertIn("am start -W -n com.example.app/com.example.app.MainActivity", am_calls[0][2])
+        # drive_coverage also runs the UI crawler straight after; an empty dump just ends it at once.
+        self.assertEqual([c[2] for c in shell_calls if c != am_calls[0]], ["uiautomator", "cat"])
 
     def test_entry_stops_on_failure(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
