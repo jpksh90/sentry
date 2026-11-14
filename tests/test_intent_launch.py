@@ -120,27 +120,40 @@ class LaunchProfiledActivities(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             ws = self.workspace(Path(tmp))
             host = FakeHost()
-            launch_profiled_activities(host, host, ws, "com.example.app", False)
+            log = launch_profiled_activities(host, host, ws, "com.example.app", False)
         self.assertEqual(host.calls, [])
+        self.assertEqual(log, [])
 
     def test_failed_or_empty_artifact_does_nothing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             ws = self.workspace(Path(tmp))
             self.write(ws, {"status": "failed", "activities": []})
             host = FakeHost()
-            launch_profiled_activities(host, host, ws, "com.example.app", False)
+            log = launch_profiled_activities(host, host, ws, "com.example.app", False)
         self.assertEqual(host.calls, [])
+        self.assertEqual(log, [])
 
     def test_fires_one_am_start_per_command_after_a_delay(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             ws = self.workspace(Path(tmp))
             self.write(ws, {"status": "completed", "activities": [activity()]})
             host = FakeHost()
-            launch_profiled_activities(host, host, ws, "com.example.app", False)
+            log = launch_profiled_activities(host, host, ws, "com.example.app", False)
         self.assertEqual(host.calls[0], ("sleep", 3.0))
         self.assertEqual(
             host.calls[1],
             ("run", ["shell", "am start -W -n com.example.app/com.example.app.MainActivity -a android.intent.action.VIEW"], {}),
+        )
+        self.assertEqual(
+            log,
+            [
+                {
+                    "class_name": "com.example.app.MainActivity",
+                    "command": "am start -W -n com.example.app/com.example.app.MainActivity -a android.intent.action.VIEW",
+                    "attempts": 1,
+                    "ok": True,
+                }
+            ],
         )
 
     def test_verbose_echoes_a_line_per_launch(self) -> None:

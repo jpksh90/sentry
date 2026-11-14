@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from core.report.markdown_dynamic import dynamic_section
 from core.report.markdown_static import static_section
 
 
@@ -162,5 +163,8 @@ def markdown_report(report: dict[str, Any]) -> str:
 
     if report.get("static_bridges") is not None:
         lines.extend(static_section(report["static_bridges"]))
+
+    if report.get("dynamic_drive") is not None:
+        lines.extend(dynamic_section(report["dynamic_drive"]))
 
     return "\n".join(lines).rstrip() + "\n"

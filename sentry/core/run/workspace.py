@@ -19,6 +19,7 @@ class Workspace:
         self.agent = self.target / "agent.js"
         self.static_bridges = self.target / "static-bridges.json"
         self.intent_profile = self.target / "intent-data-profile.json"
+        self.dynamic_drive = self.target / "dynamic-drive.json"
 
     @property
     def capture_files(self) -> list[Path]:
@@ -34,6 +35,7 @@ class Workspace:
         self.report_md.unlink(missing_ok=True)
         self.static_bridges.unlink(missing_ok=True)
         self.intent_profile.unlink(missing_ok=True)
+        self.dynamic_drive.unlink(missing_ok=True)
         # SENTRY_VERBOSE rides along in .env so the Docker runner's containers (which only see this
         # file, not the CLI argv) can pick it up too - core.runners.container.entry reads it back.
         self.env_file.write_text(f"APP_PACKAGE={package}\nSENTRY_VERBOSE={'true' if verbose else 'false'}\n", encoding="utf-8")

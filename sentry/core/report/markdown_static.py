@@ -42,6 +42,8 @@ def bridge_lines(bridge: dict[str, Any]) -> list[str]:
         lines.append(f"- Class resolution: {static['class_resolution']}")
         lines.append(f"- Exposed methods: {', '.join(signature(m) for m in static['methods']) or 'none'}")
     lines.append(f"- Sensitive methods: {', '.join(bridge['sensitive_methods']) or 'none'}")
+    if bridge.get("automation_attempted") is not None:
+        lines.append(f"- Automation attempted a launch of its registering activity: {'yes' if bridge['automation_attempted'] else 'no'}")
     lines.append("")
     return lines
 

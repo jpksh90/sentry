@@ -43,32 +43,43 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         help="Static bridge discovery artifact (target/static-bridges.json) to compare with the runtime events.",
     )
+    parser.add_argument(
+        "--dynamic-drive",
+        dest="dynamic_drive",
+        type=Path,
+        default=None,
+        help="Dynamic-drive automation log (target/dynamic-drive.json): activities launched and UI taps performed.",
+    )
     return parser
 
 
-def load_static(path: Path | None) -> dict | None:
-    """The parsed artifact, or None (with a warning) when it cannot be used."""
+def load_artifact(path: Path | None, label: str) -> dict | None:
+    """The parsed schema-1 JSON artifact at `path`, or None (with a warning) when it cannot be used."""
     if path is None:
         return None
     try:
-        static = json.loads(path.read_text(encoding="utf-8"))
+        artifact = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         reason = "not found"
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         reason = "invalid JSON"
     else:
-        schema = static.get("schema") if isinstance(static, dict) else None
+        schema = artifact.get("schema") if isinstance(artifact, dict) else None
         if schema == 1:
-            return static
+            return artifact
         reason = f"unsupported schema {schema}"
-    print(f"Warning: ignoring static bridge artifact: {reason}")
+    print(f"Warning: ignoring {label} artifact: {reason}")
     return None
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
     events, skipped = load_events(args.log_file)
-    analyzer = Analyzer(set(args.trusted_origin), static=load_static(args.static_bridges))
+    analyzer = Analyzer(
+        set(args.trusted_origin),
+        static=load_artifact(args.static_bridges, "static bridge"),
+        dynamic=load_artifact(args.dynamic_drive, "dynamic-drive"),
+    )
     report = analyzer.build_report(events, skipped)
 
     args.json_output.parent.mkdir(parents=True, exist_ok=True)

@@ -25,10 +25,11 @@ TRACKERS = {
 
 
 class Analyzer:
-    def __init__(self, trusted_origins: set[str], static: dict[str, Any] | None = None) -> None:
+    def __init__(self, trusted_origins: set[str], static: dict[str, Any] | None = None, dynamic: dict[str, Any] | None = None) -> None:
         self.tracker = WebViewTracker(trusted_origins)
         self.findings = FindingStore()
         self.static = static
+        self.dynamic = dynamic
 
     def observe(self, event: dict[str, Any]) -> None:
         event_type = event.get("type")
@@ -45,6 +46,6 @@ class Analyzer:
             self.observe(event)
         section = None
         if self.static is not None:
-            section = correlate.correlate(self.static, self.tracker)
+            section = correlate.correlate(self.static, self.tracker, self.dynamic)
             static_bridges.detect_static_unobserved(section, self.findings)
-        return assemble.build_report(self.tracker, self.findings, events, skipped_lines, section)
+        return assemble.build_report(self.tracker, self.findings, events, skipped_lines, section, self.dynamic)

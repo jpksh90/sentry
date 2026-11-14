@@ -41,6 +41,7 @@ Package extraction requires `aapt`. It is looked up on `PATH`, then in the newes
 - `target/report.json`: machine-readable report with risk score, findings, evidence, WebView inventory, sensitive data flows, and origin-to-bridge map
 - `target/static-bridges.json`: JavaScript bridges found by static analysis of the APK (see below)
 - `target/intent-data-profile.json`: per-activity Intent/URI data shape for activities that touch a WebView (see below)
+- `target/dynamic-drive.json`: activities launched and UI actions performed by Sentry's own automation (see below)
 
 If no Sentry events are captured, report generation is skipped so empty runs are not mistaken for clean results.
 
@@ -112,14 +113,33 @@ since that's where that mode's adb session to the emulator lives; it reads the s
 `target/.env`, which `analyse.sh` writes alongside `APP_PACKAGE`.
 
 Right after that, in the same background thread, Sentry also crawls the UI it now finds itself on:
-it dumps the screen with `uiautomator dump`, picks a clickable, enabled node belonging to the app
-(preferring one it hasn't tapped yet; once everything has been tapped once, it starts tapping again
-rather than stopping), taps its center with `adb shell input tap`, waits a second for the UI to
-settle, and repeats, up to 20 taps. This needs no intent-data profile at all - it clicks through
-whatever's on screen (the app's own chrome, dialogs, WebView content with native-looking controls),
-so it still runs even when the profile found nothing to launch. Pass `--verbose` to see each tap
-(`ui tap -> <label> at (x, y)`); otherwise it's silent and best-effort like the rest of this
-pipeline - no `uiautomator` on the device, or nothing clickable, just ends the crawl early.
+it dumps the screen with `uiautomator dump`, picks something to tap, taps its center with
+`adb shell input tap`, waits a second for the UI to settle, and repeats, up to 20 taps. This needs
+no intent-data profile at all - it clicks through whatever's on screen (the app's own chrome,
+dialogs, WebView content with native-looking controls), so it still runs even when the profile found
+nothing to launch. Two heuristics keep it from stalling or wandering uselessly:
+
+- **System dialogs are dismissed on sight**, regardless of package. A permission prompt belongs to
+  `com.google.android.permissioncontroller`, not the app under test, so the package-scoped tap
+  selection below never sees it - and left alone, it blocks every tap aimed at the app underneath it.
+- **Among the app's own clickable nodes, forward progress is preferred.** One it hasn't tapped yet
+  beats one it has (once everything has been tapped once, it starts repeating rather than stopping);
+  within that, a label that reads like progress (`next`, `allow`, `accept`, `login`, ...) beats a
+  neutral one, which beats a label that reads like a dead end (`back`, `cancel`, `skip`, ...).
+
+Pass `--verbose` to see each action (`ui tap -> <label> at (x, y)`, or `ui dismiss -> ...` for a
+system dialog); otherwise it's silent and best-effort like the rest of this pipeline - no
+`uiautomator` on the device, or nothing clickable, just ends the crawl early.
+
+### Seeing what automation did
+
+Both of the above write everything they did to `target/dynamic-drive.json`: every activity launched
+(with its command, attempt count and whether it succeeded) and every UI action taken. When a report
+is generated with that artifact available, it gains a **Dynamic Coverage** section listing all of
+it, and the **Static Bridge Inventory** section's `static-only` bridges each gain an "Automation
+attempted a launch of its registering activity: yes/no" line - cross-referencing the bridge's call
+site against which activities automation actually got to launch, so you can tell a bridge nobody
+has looked at yet from one automation tried and still didn't reach.
 
 Limits: the analysis works within one method at a time. A bridge name built at runtime (concatenated, read from config, or returned by another method) is reported as unresolved, along with where it came from; it is never guessed. Code loaded at runtime (downloaded dex, reflection) shows up only as `runtime-only`. For apps targeting API levels below 17, every public method of a registered object is reported as exposed.
 

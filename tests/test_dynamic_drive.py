@@ -48,6 +48,28 @@ class DriveCoverage(unittest.TestCase):
             drive_coverage(host, host, ws, "com.example.app", False)
         self.assertEqual([c[1][1] for c in host.calls if c[0] == "run"], ["uiautomator", "cat"])  # no am start, straight to crawling
 
+    def test_writes_the_artifact_with_both_logs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = Workspace(Path(tmp))
+            ws.target.mkdir(parents=True)
+            profile = {
+                "status": "completed",
+                "activities": [
+                    {"class_name": "com.example.app.MainActivity", "exported": True, "exported_declared": True,
+                     "intent_filters": [], "intent_keys": []}
+                ],
+            }
+            ws.intent_profile.write_text(json.dumps(profile), encoding="utf-8")
+            host = FakeHost(respond=lambda cmd: Result(0, ""))
+            drive_coverage(host, host, ws, "com.example.app", False)
+            artifact = json.loads(ws.dynamic_drive.read_text(encoding="utf-8"))
+        self.assertEqual(artifact["schema"], 1)
+        self.assertEqual(artifact["package"], "com.example.app")
+        (launch,) = artifact["activities_launched"]
+        self.assertEqual(launch["class_name"], "com.example.app.MainActivity")
+        self.assertTrue(launch["ok"])
+        self.assertEqual(artifact["ui_actions"], [])  # empty dump: the crawler finds nothing to tap
+
 
 if __name__ == "__main__":
     unittest.main()

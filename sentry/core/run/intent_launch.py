@@ -37,26 +37,30 @@ def run_with_retry(host: Host, adb: Any, shell_command: str) -> tuple[Result, in
     return result, MAX_ATTEMPTS  # pragma: no cover - loop above always returns
 
 
-def launch_profiled_activities(host: Host, adb: Any, workspace: Workspace, package: str, verbose: bool) -> None:
+def launch_profiled_activities(host: Host, adb: Any, workspace: Workspace, package: str, verbose: bool) -> list[dict[str, Any]]:
     try:
         data = json.loads(workspace.intent_profile.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return
+        return []
     if data.get("status") != "completed":
-        return
+        return []
     commands = [
         (activity["class_name"], argv)
         for activity in data.get("activities") or []
         for argv in build_am_commands(package, activity)
     ]
     if not commands:
-        return
+        return []
 
     host.sleep(DELAY_SECONDS)
+    log: list[dict[str, Any]] = []
     for class_name, argv in commands:
         shell_command = " ".join(shlex.quote(token) for token in argv)
         result, attempts = run_with_retry(host, adb, shell_command)
+        ok = result.returncode == 0
+        log.append({"class_name": class_name, "command": shell_command, "attempts": attempts, "ok": ok})
         if verbose:
-            status = "ok" if result.returncode == 0 else f"exit {result.returncode}, gave up"
+            status = "ok" if ok else f"exit {result.returncode}, gave up"
             tries = "" if attempts == 1 else f" after {attempts} attempts"
             host.echo(f"am start -> {class_name} ({status}{tries}): {shell_command}")
+    return log

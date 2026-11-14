@@ -17,6 +17,8 @@ def generate_report(host: Host, workspace: Workspace) -> None:
             argv = [str(workspace.output_log), "--json", str(workspace.report_json), "--markdown", str(workspace.report_md)]
             if workspace.static_bridges.is_file():
                 argv += ["--static-bridges", str(workspace.static_bridges)]
+            if workspace.dynamic_drive.is_file():
+                argv += ["--dynamic-drive", str(workspace.dynamic_drive)]
             report_cli.main(argv)
         except SystemExit:
             pass

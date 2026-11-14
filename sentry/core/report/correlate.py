@@ -42,10 +42,18 @@ def sensitive(static_methods: list[dict[str, Any]], runtime_methods: set[str]) -
     return sorted(names)
 
 
-def correlate(static: dict[str, Any], tracker: Any) -> dict[str, Any]:
+def launched_classes(dynamic: dict[str, Any] | None) -> set[str] | None:
+    """Classes an `am start` reported success for, or None when no dynamic-drive log was given at all."""
+    if dynamic is None:
+        return None
+    return {entry["class_name"] for entry in dynamic.get("activities_launched") or [] if entry.get("ok")}
+
+
+def correlate(static: dict[str, Any], tracker: Any, dynamic: dict[str, Any] | None = None) -> dict[str, Any]:
     completed = static.get("status") == "completed"
     registrations = static.get("registrations") or [] if completed else []
     runtime = runtime_bridges(tracker)
+    launched = launched_classes(dynamic)
     used: set[tuple[str, str | None]] = set()
     grouped: dict[tuple[str | None, str | None], dict[str, Any]] = {}
 
@@ -62,11 +70,13 @@ def correlate(static: dict[str, Any], tracker: Any) -> dict[str, Any]:
                 "className": registration["class_name"] or (classes.pop() if len(classes) == 1 else None),
                 "static": static_view(registration),
                 "registered_in": [],
+                "registered_classes": set(),
                 "runtime_webviews": set(),
                 "runtime_methods": set(),
             }
         call_site = registration["call_site"]
         entry["registered_in"].append(f"{call_site['class']}.{call_site['signature']}")
+        entry["registered_classes"].add(call_site["class"])
         for hit in hits:
             entry["runtime_webviews"] |= runtime[hit]["webviews"]
             entry["runtime_methods"] |= runtime[hit]["methods"]
@@ -83,6 +93,7 @@ def correlate(static: dict[str, Any], tracker: Any) -> dict[str, Any]:
                 "runtime_webviews": sorted(entry["runtime_webviews"]),
                 "runtime_methods": sorted(entry["runtime_methods"]),
                 "sensitive_methods": sensitive(entry["static"]["methods"], entry["runtime_methods"]),
+                "automation_attempted": bool(entry["registered_classes"] & launched) if launched is not None else None,
             }
         )
     for (name, class_name), seen in runtime.items():
@@ -98,6 +109,7 @@ def correlate(static: dict[str, Any], tracker: Any) -> dict[str, Any]:
                 "runtime_webviews": sorted(seen["webviews"]),
                 "runtime_methods": sorted(seen["methods"]),
                 "sensitive_methods": sensitive([], seen["methods"]),
+                "automation_attempted": None,
             }
         )
     bridges.sort(key=lambda b: (PROVENANCE_ORDER[b["provenance"]], b["interfaceName"] or "", b["className"] or ""))

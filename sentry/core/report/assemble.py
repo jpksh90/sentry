@@ -8,7 +8,12 @@ from core.report.values import compact
 
 
 def build_report(
-    tracker: Any, findings: Any, events: list[dict[str, Any]], skipped_lines: int, static_section: dict[str, Any] | None = None
+    tracker: Any,
+    findings: Any,
+    events: list[dict[str, Any]],
+    skipped_lines: int,
+    static_section: dict[str, Any] | None = None,
+    dynamic_section: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     sorted_findings = findings.sorted_findings()
 
@@ -28,6 +33,8 @@ def build_report(
     }
     if static_section is not None:
         report["static_bridges"] = static_section
+    if dynamic_section is not None:
+        report["dynamic_drive"] = dynamic_section
     return report
 
 
